@@ -48,6 +48,9 @@
     border: 1px solid var(--line); border-radius: 4px; }
   #q { min-width: 18em; }
   .count { margin-left: auto; color: var(--muted); }
+  #clear { font-size: .95em; background: none; color: var(--hi); border: 1px solid var(--hi); padding: .25em .8em;
+    border-radius: 4px; cursor: pointer; }
+  #clear:disabled { color: var(--muted); border-color: var(--line); cursor: default; }
   .tabs button { font-size: .95em; background: none; color: var(--fg); border: 1px solid var(--line); padding: .3em .8em;
     border-radius: 4px; cursor: pointer; }
   .tabs button.on { border-color: var(--hi); color: var(--hi); }
@@ -90,6 +93,7 @@ ids and metadata.</p>
   <label>Frequency<select id="f-frequencies"></select></label>
   <label>Variable<input id="f-variables" list="varlist" placeholder="any"><datalist id="varlist"></datalist></label>
   <span class="count" id="count"></span>
+  <button id="clear" type="button" title="Reset search, filters and tree selection">Clear filters</button>
 </div>
 <div class="tabs"><button id="t-list" class="on">Datasets</button> <button id="t-matrix">Variable × dataset</button></div>
 <div id="list"></div>
@@ -229,8 +233,21 @@ function render() {
   if (view === "matrix") p.set("view", "matrix");
   if (sel !== ".") p.set("path", sel);
   for (const f of FACETS.concat(["variables"])) if ($("f-" + f).value) p.set(f, $("f-" + f).value);
+  $("clear").disabled = !isFiltered();
   history.replaceState(null, "", "#" + p.toString());
 }
+function isFiltered() {
+  return sel !== "." || $("q").value.trim() !== "" || $("f-variables").value.trim() !== ""
+    || FACETS.some(f => $("f-" + f).value);
+}
+
+$("clear").onclick = () => {
+  sel = ".";
+  $("q").value = ""; $("f-variables").value = "";
+  for (const f of FACETS) $("f-" + f).value = "";
+  render();
+};
+
 $("tree").addEventListener("click", ev => {
   const t = ev.target.closest("[data-tog]"), a = ev.target.closest("[data-path]");
   if (t) { const k = t.dataset.tog; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); }
