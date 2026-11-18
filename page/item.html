@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dataset</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: white; --fg: black; --hi: rgb(0, 76, 255); --hi-faint: rgb(197, 219, 255); --muted: #666; --line: #ddd;
+    --warn: #f6d2b8;
+    font-family: system-ui, sans-serif; line-height: 1.5; color-scheme: light dark; color: var(--fg); background: var(--bg);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: white; --bg: black; --hi: rgb(255, 247, 0); --hi-faint: rgb(39, 37, 1); --muted: #aaa; --line: #333; }
+  }
+  body { margin: 0 auto; max-width: 1200px; padding: 1em; }
+  a { color: var(--hi); }
+  .crumbs { font-size: .85em; color: var(--muted); }
+  .crumbs a { color: var(--muted); }
+  h1 { font-size: 1.5em; margin: .2em 0 0; }
+  h2 { font-size: 1.05em; margin: 1.4em 0 .5em; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+  .id, code, pre { font-family: ui-monospace, monospace; font-size: .85em; }
+  .id { color: var(--muted); word-break: break-all; }
+  .tags span { display: inline-block; font-size: .75em; padding: 0 .5em; margin: .3em .25em 0 0; border-radius: 3px;
+    background: var(--hi-faint); }
+  .tags span.warn { background: var(--warn); color: black; }
+  .top { display: grid; grid-template-columns: 1fr 420px; gap: 1.5em; align-items: start; margin-top: .8em; }
+  #map { height: 260px; border: 1px solid var(--line); border-radius: 6px; }
+  .bbox { font-size: .8em; color: var(--muted); margin-top: .3em; }
+  dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .15em 1em; margin: .6em 0 0; font-size: .9em; }
+  dl.meta dt { color: var(--muted); }
+  dl.meta dd { margin: 0; }
+  .desc { max-width: 750px; }
+  .desc p { margin: .4em 0; }
+  .desc ul { margin: .2em 0; padding-left: 1.4em; }
+  .time { display: flex; flex-wrap: wrap; gap: .6em; }
+  .time .box { border: 1px solid var(--line); border-radius: 6px; padding: .4em .8em; min-width: 9em; }
+  .time .box .k { font-size: .75em; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .time .box .v { font-size: 1.05em; }
+  .bar { position: relative; height: 10px; background: var(--line); border-radius: 5px; margin: .7em 0 .2em; max-width: 750px; }
+  .bar div { position: absolute; top: 0; bottom: 0; background: var(--hi); border-radius: 5px; }
+  .barlbl { display: flex; justify-content: space-between; max-width: 750px; font-size: .75em; color: var(--muted); }
+  .tabs { display: flex; flex-wrap: wrap; gap: .3em; margin: .4em 0 .8em; }
+  .tabs button { font-size: .9em; background: none; color: var(--fg); border: 1px solid var(--line); padding: .2em .7em;
+    border-radius: 4px; cursor: pointer; font-family: ui-monospace, monospace; }
+  .tabs button.on { border-color: var(--hi); color: var(--hi); }
+  table { border-collapse: collapse; font-size: .85em; width: 100%; }
+  th, td { text-align: left; border-bottom: 1px solid var(--line); padding: .25em .5em; vertical-align: top; }
+  th { color: var(--muted); font-weight: normal; font-size: .9em; }
+  td.name { font-family: ui-monospace, monospace; white-space: nowrap; }
+  td.sn { font-family: ui-monospace, monospace; font-size: .9em; word-break: break-all; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em; }
+  pre { background: var(--hi-faint); padding: .5em .7em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
+  .note { font-size: .85em; color: var(--muted); }
+  input.filter, select { font-size: .9rem; padding: .15em .4em; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+  .bad { color: #d33; }
+  .links a { margin-right: 1em; font-size: .9em; }
+  @media (max-width: 850px) { .top, .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="crumbs" id="crumbs"><a href="index.html">Catalogue</a></div>
+<div id="root"><p class="note">Loading…</p></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const fmtDate = s => s ? s.slice(0, 16).replace("T", " ").replace(/ 00:00$/, "") : "?";
+const dsid = decodeURIComponent(location.hash.slice(1));
+
+// tiny markdown: paragraphs, **bold**, "* " / "- " bullet lines, bare links
+function md(text) {
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
+  return text.split(/\n\s*\n/).map(block => {
+    const lines = block.split("\n");
+    const items = lines.filter(l => /^\s*[*-]\s+/.test(l));
+    const rest = lines.filter(l => !/^\s*[*-]\s+/.test(l));
+    return (rest.length ? `<p>${rest.map(inline).join("<br>")}</p>` : "") +
+      (items.length ? `<ul>${items.map(l => `<li>${inline(l.replace(/^\s*[*-]\s+/, ""))}</li>`).join("")}</ul>` : "");
+  }).join("");
+}
+
+function linkify(s) {
+  return String(s).split(/[,\s]+/).filter(Boolean).map(u => {
+    if (/^https?:\/\//.test(u)) return `<a href="${esc(u)}">${esc(u)}</a>`;
+    if (/^doi:/i.test(u)) return `<a href="https://doi.org/${esc(u.slice(4))}">${esc(u)}</a>`;
+    return esc(u);
+  }).join(", ");
+}
+
+// the same copy choice as km_scale._choose
+function choose(item, asset, site, sites) {
+  const alt = asset.alternate || {};
+  const siteOnly = item.properties["km_scale:site_only"];
+  if (alt[site]) return {copy: site, href: alt[site].href};
+  if (siteOnly && !siteOnly.includes(site)) return {copy: "unavailable", href: `only at ${siteOnly.join(", ")}`};
+  let copy = siteOnly ? siteOnly[0] : "online", href = asset.href;
+  if (copy === "online") {
+    for (const [a, b] of Object.entries((sites[site] || {}).endpoint_overrides || {}))
+      if (href.startsWith(a)) { href = b + href.slice(a.length); copy = `online via ${site} endpoint`; }
+  }
+  return {copy, href};
+}
+
+function groupAssets(assets) {
+  const g = {};
+  for (const [key, a] of Object.entries(assets)) {
+    const freq = key.split(".")[0];
+    (g[freq] ||= []).push({key, a, zoom: a["km_scale:zoom"] ?? null});
+  }
+  for (const f in g) g[f].sort((x, y) => (x.zoom ?? -1) - (y.zoom ?? -1));
+  return g;
+}
+
+function findPath(n, path, acc = []) {
+  if (n.path === path) return [...acc, n];
+  for (const c of n.children) { const r = findPath(c, path, [...acc, n]); if (r) return r; }
+  return null;
+}
+
+Promise.all(["index.json", "tree.json", "sites.json"].map(u => fetch(u).then(r => r.json()))).then(async ([index, tree, sites]) => {
+  const entry = index.find(e => e.id === dsid);
+  if (!entry) { $("root").innerHTML = `<p class="bad">Unknown dataset ${esc(dsid)}.</p>`; return; }
+  const item = await fetch(entry.item).then(r => r.json());
+  render(item, entry, tree, sites);
+});
+
+function render(item, entry, tree, sites) {
+  const p = item.properties;
+  document.title = `${p.title} · ${item.id}`;
+  // breadcrumbs from the tree
+  const trail = findPath(tree, entry.path) || [];
+  $("crumbs").innerHTML = trail.map(n => `<a href="index.html${n.path === "." ? "" : "#path=" + encodeURIComponent(n.path)}">${esc(n.path === "." ? "Catalogue" : (n.type === "Collection" ? n.id : n.title))}</a>`).join(" › ") + ` › <span>${esc(item.id)}</span>`;
+
+  const groups = groupAssets(item.assets);
+  const freqs = Object.keys(groups).sort((a, b) => (a === "static") - (b === "static") || a.localeCompare(b));
+  const unreachable = Object.values(item.assets).filter(a => a["km_scale:reachable"] === false).length;
+
+  const tags = [p["km_scale:product_type"], item.collection, p["km_scale:experiment"] && (p["km_scale:experiment"] + (p["km_scale:experiment_inferred"] ? " (inferred)" : "")),
+    p["km_scale:domain"], p["km_scale:resolution"]].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join("");
+  const warns = [p["km_scale:site_only"] && `only at ${p["km_scale:site_only"].join(", ")}`,
+    unreachable && `${unreachable} asset(s) not reachable`].filter(Boolean).map(t => `<span class="warn">${esc(t)}</span>`).join("");
+
+  const meta = [
+    ["licence", p.license === "other" ? (p["km_scale:license_text"] ? esc(p["km_scale:license_text"]) : "not stated") : esc(p.license)],
+    ["providers", esc((p.providers || []).map(x => `${x.name} (${(x.roles || []).join(", ")})`).join("; "))],
+    ["creators", esc(p["km_scale:creators"])],
+    ["references", p["km_scale:references"] ? linkify(p["km_scale:references"]) : ""],
+    ["source id", esc(p["km_scale:source_id"])],
+    ["available at", esc((p["km_scale:sites"] || []).join(", "))],
+  ].filter(r => r[1]);
+
+  const start = p.start_datetime || p.datetime, end = p.end_datetime || p.datetime;
+  const days = start && end ? Math.round((Date.parse(end) - Date.parse(start)) / 864e5) : null;
+  const tbox = (k, v) => `<div class="box"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const freqTimes = freqs.map(f => {
+    const a = groups[f].find(x => x.a["cube:dimensions"])?.a;
+    const t = a && Object.values(a["cube:dimensions"]).find(d => d.type === "temporal");
+    return t ? tbox(esc(f), `${esc(t.step || "")}${t.count ? ` · ${t.count.toLocaleString()} steps` : ""}${t.extent ? `<div class="note">${esc(fmtDate(t.extent[0]))} → ${esc(fmtDate(t.extent[1]))}</div>` : ""}`) : "";
+  }).join("");
+  // does the metadata time range agree with what the stores contain?
+  const mismatch = freqs.map(f => {
+    const a = groups[f].find(x => x.a["cube:dimensions"])?.a;
+    const t = a && Object.values(a["cube:dimensions"]).find(d => d.type === "temporal" && d.extent);
+    if (!t || !start || !end) return null;
+    const off = Math.max(Math.abs(Date.parse(t.extent[0]) - Date.parse(start)), Math.abs(Date.parse(t.extent[1]) - Date.parse(end))) / 864e5;
+    return off > 1 ? `${f} data run ${fmtDate(t.extent[0])} → ${fmtDate(t.extent[1])}` : null;
+  }).filter(Boolean);
+  const mismatchHTML = mismatch.length ? `<p class="bad">The Item's time range (from the catalogue metadata) doesn't match the stores: ${esc(mismatch.join("; "))}.</p>` : "";
+  // timeline bar against the DYAMOND3 period, for context
+  const d0 = Date.parse("2020-01-01"), d1 = Date.parse("2021-04-01");
+  const lo = Math.max(0, (Date.parse(start) - d0) / (d1 - d0)), hi = Math.min(1, (Date.parse(end) - d0) / (d1 - d0));
+  const bar = start && end && hi > 0 && lo < 1 ? `<div class="bar" title="${esc(fmtDate(start))} → ${esc(fmtDate(end))}"><div style="left:${lo * 100}%;width:${Math.max(0.5, (hi - lo) * 100)}%"></div></div>
+    <div class="barlbl"><span>2020-01</span><span>2020-07</span><span>2021-01</span><span>2021-04</span></div><div class="note">Bar: period covered, on a Jan 2020 – Apr 2021 axis (DYAMOND3 runs 2020-01-20 → 2021-03-01).</div>` : "";
+
+  $("root").innerHTML = `
+    <h1>${esc(p.title)}</h1><div class="id">${esc(item.id)}</div>
+    <div class="tags">${tags}${warns}</div>
+    <div class="top">
+      <div>
+        ${p.description ? `<div class="desc">${md(p.description)}</div>` : ""}
+        <dl class="meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+      </div>
+      <div><div id="map"></div><div class="bbox" id="bbox"></div></div>
+    </div>
+
+    <h2>Time</h2>
+    <div class="time">${tbox("start", esc(fmtDate(start)))}${tbox("end", esc(fmtDate(end)))}${days !== null ? tbox("length", `${days} days`) : ""}${freqTimes}</div>
+    ${mismatchHTML}${bar}
+
+    <h2>Data</h2>
+    <div class="tabs" id="ftabs">${freqs.map(f => `<button data-f="${esc(f)}">${esc(f)}</button>`).join("")}</div>
+    <div id="fbody"></div>
+
+    <h2>Links</h2>
+    <div class="links"><a href="${esc(entry.item)}">STAC Item JSON</a>${trail.length ? `<a href="${esc(trail[trail.length - 1].href)}">Collection JSON</a>` : ""}${entry.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(entry.gridlook)}">View in gridlook</a>` : ""}</div>`;
+
+  drawMap(item);
+  let cur = freqs.find(f => f.startsWith("PT1H")) || freqs[0];
+  const show = f => {
+    cur = f;
+    document.querySelectorAll("#ftabs button").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+    $("fbody").innerHTML = freqBody(item, groups[f], f, sites);
+    wireFreq(item, groups[f], f, sites);
+  };
+  $("ftabs").onclick = ev => { const b = ev.target.closest("button"); if (b) show(b.dataset.f); };
+  show(cur);
+}
+
+function drawMap(item) {
+  const b = item.bbox;
+  if (!b || typeof L === "undefined") { $("map").outerHTML = `<p class="note">${b ? "Map unavailable (offline)." : "No spatial footprint."}</p>`; }
+  else {
+    const map = L.map("map", {worldCopyJump: false, attributionControl: true, zoomSnap: 0.25});
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 8, noWrap: true, attribution: "© OpenStreetMap"}).addTo(map);
+    map.setMaxBounds([[-90, -200], [90, 200]]);
+    const global = b[0] <= -179 && b[2] >= 179 && b[1] <= -89 && b[3] >= 89;
+    const r = L.rectangle([[Math.max(b[1], -85), b[0]], [Math.min(b[3], 85), b[2]]], {color: "#0050ff", weight: 2, fillOpacity: global ? 0.05 : 0.2}).addTo(map);
+    map.fitBounds(r.getBounds(), {padding: [10, 10]});
+  }
+  const f = v => `${Math.abs(v).toFixed(1)}°`;
+  $("bbox").textContent = b ? `${f(b[1])}${b[1] < 0 ? "S" : "N"} to ${f(b[3])}${b[3] < 0 ? "S" : "N"}, ${f(b[0])}${b[0] < 0 ? "W" : "E"} to ${f(b[2])}${b[2] < 0 ? "W" : "E"}` +
+    (b[0] <= -179 && b[2] >= 179 ? " (global)" : "") : "";
+}
+
+function freqBody(item, group, f, sites) {
+  const zooms = group.map(x => x.zoom).filter(z => z !== null);
+  const withCube = group.find(x => x.a["cube:variables"]);
+  const a0 = (withCube || group[0]).a;
+  const fmt = a0["km_scale:format"] || (a0.type || "").split(";")[0];
+  const copies = new Set(["default", ...group.flatMap(x => Object.keys(x.a.alternate || {}))]);
+  const defZoom = zooms.includes(8) ? 8 : (zooms.filter(z => z <= 8).pop() ?? zooms[0] ?? null);
+  const vars = withCube ? Object.entries(withCube.a["cube:variables"]) : [];
+  const dims = withCube ? Object.entries(withCube.a["cube:dimensions"]) : [];
+  const dimDesc = d => d.type === "healpix" ? "HEALPix cells (count depends on zoom)"
+    : d.values ? (d.values.length > 12 ? `${d.values.length} values: ${d.values.slice(0, 4).join(", ")} … ${d.values.slice(-2).join(", ")}` : d.values.join(", "))
+    : d.extent ? `${d.extent.map(x => typeof x === "string" ? fmtDate(x) : x).join(" → ")}` : "";
+  return `
+    <div class="grid2">
+      <div>
+        <table>
+          <tr><th>format</th><td>${esc(fmt)}${a0["zarr:zarr_format"] ? ` (Zarr v${a0["zarr:zarr_format"]}${a0["zarr:consolidated"] ? ", consolidated" : ""})` : ""}</td></tr>
+          <tr><th>zoom levels</th><td>${zooms.length ? `${zooms[0]}–${zooms[zooms.length - 1]} (${zooms.length} stores)` : "–"}</td></tr>
+          ${zooms.length ? `<tr><th>cells</th><td>${(12 * 4 ** zooms[0]).toLocaleString()} (z${zooms[0]}) to ${(12 * 4 ** zooms[zooms.length - 1]).toLocaleString()} (z${zooms[zooms.length - 1]})</td></tr>` : ""}
+          <tr><th>variables</th><td>${vars.length ? vars.filter(([, v]) => v.type === "data").length : "not read (store not online)"}</td></tr>
+          <tr><th>copies</th><td>${esc([...copies].map(c => c === "default" ? (item.properties["km_scale:site_only"]?.[0] || "online") : c).join(", "))}</td></tr>
+        </table>
+        <p class="note" style="margin-top:.8em">Open it (the same call at every node):</p>
+        <pre id="snip"></pre>
+        ${zooms.length ? `<label class="note">zoom <select id="zsel">${zooms.map(z => `<option${z === defZoom ? " selected" : ""}>${z}</option>`).join("")}</select></label>` : ""}
+      </div>
+      <div>
+        <div class="note">Where each site reads this from (<code>km_scale.where</code>):</div>
+        <table id="where"></table>
+      </div>
+    </div>
+    ${dims.length ? `<h2>Dimensions</h2><table><tr><th>name</th><th>type</th><th>size</th><th>unit</th><th>values</th></tr>
+      ${dims.map(([n, d]) => `<tr><td class="name">${esc(n)}</td><td>${esc(d.type)}${d.axis ? ` (${esc(d.axis)})` : ""}</td><td>${d.count?.toLocaleString() ?? ""}</td><td>${esc(d.unit || "")}</td><td>${esc(dimDesc(d))}</td></tr>`).join("")}
+      </table><p class="note">Sizes are for zoom ${esc(withCube.zoom ?? "")}.</p>` : ""}
+    ${vars.length ? `<h2>Variables <input class="filter" id="vfilter" placeholder="filter, e.g. rad, air_temp" style="margin-left:.5em"></h2>
+      <table id="vtable"><tr><th>name</th><th>long name</th><th>units</th><th>standard name</th><th>cell methods</th><th>dimensions</th></tr>
+      ${vars.sort(([a, x], [b, y]) => (x.type === "data") === (y.type === "data") ? a.localeCompare(b) : x.type === "data" ? -1 : 1).map(([n, v]) => `<tr data-s="${esc((n + " " + (v.description || "") + " " + (v["cf:standard_name"] || "")).toLowerCase())}">
+        <td class="name">${esc(n)}${v.type !== "data" ? ' <span class="note">(aux)</span>' : ""}</td><td>${esc(v.description || "")}</td><td>${esc(v.unit || "")}</td>
+        <td class="sn">${esc(v["cf:standard_name"] || "")}</td><td>${esc([].concat(v["cf:cell_methods"] || []).join("; "))}</td><td class="sn">${esc((v.dimensions || []).join(", "))}</td></tr>`).join("")}
+      </table>` : ""}`;
+}
+
+function wireFreq(item, group, f, sites) {
+  const upd = () => {
+    const z = $("zsel") ? Number($("zsel").value) : null;
+    const x = group.find(g => g.zoom === z) || group[0];
+    $("snip").textContent = `import km_scale\nds = km_scale.open_dataset("${item.id}", freq="${f}"${z === null ? ", zoom=None" : `, zoom=${z}`})`;
+    $("where").innerHTML = `<tr><th>site</th><th>copy</th><th>href</th></tr>` + Object.keys(sites).map(s => {
+      const c = choose(item, x.a, s, sites);
+      return `<tr><td>${esc(s)}</td><td>${c.copy === "unavailable" ? `<span class="bad">unavailable</span>` : esc(c.copy)}</td><td class="sn">${esc(c.href)}</td></tr>`;
+    }).join("") + (x.a["km_scale:reachable"] === false ? `<tr><td colspan="3" class="bad">This store was not reachable when the catalogue was built.</td></tr>` : "");
+  };
+  if ($("zsel")) $("zsel").onchange = upd;
+  upd();
+  if ($("vfilter")) $("vfilter").oninput = () => {
+    const q = $("vfilter").value.trim().toLowerCase();
+    document.querySelectorAll("#vtable tr[data-s]").forEach(r => r.hidden = q && !r.dataset.s.includes(q));
+  };
+}
+</script>
+</body>
+</html>

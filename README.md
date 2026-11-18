@@ -21,6 +21,15 @@ the model proposed for HK27:
   A tree of the catalogue hierarchy on the left, generated from the STAC links into `tree.json`, is the filter for
   product type and Collection. Its counts follow the other filters; `+n?` marks datasets whose variables couldn't be
   read. Selecting a Catalog or Collection shows its shared properties (licence, providers, period, summaries).
+- **a page per Item** (`item.html#<id>`), like STAC Browser's, linked from each card in place of raw JSON:
+  - breadcrumbs from the tree, the description (with basic markdown), licence, providers, creators, references;
+  - a map of the footprint (Leaflet + OSM tiles);
+  - time: start, end and length, the steps per frequency read from the stores, and a warning when the metadata's
+    range disagrees with the data;
+  - per frequency: format, zoom levels and cell counts, copies, an `open_dataset` snippet with a zoom selector,
+    the `where()` table for every site, and dimension and variable tables (units, standard names, cell methods),
+    with a filter box;
+  - links to the Item JSON, the Collection JSON and gridlook.
 
 ## Run
 
@@ -64,6 +73,9 @@ shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacu
   - Parameter combinations advertised but with no store: `icon_d3hp003aug` and `icon_d3hp003feb` (36 each),
     `scream-dkrz` (33), and some IFS. Intake's free parameters can't express "these combinations only".
   - 27 datasets have no licence and 8 have no time range.
+  - 11 datasets' metadata time ranges don't match their stores' time coordinates (by more than a day). Seven are UM v5
+    runs (e.g. `um_SEA_km4p4_RAL3P3_n1280_GAL9_nest`: the metadata ends 2021-02-26, the data runs to 2021-04-01); the
+    others are `arp-gem-1p3km`, `casesm2_10km_nocumulus`, `icon_d3hp003aug` and `icon_d3hp003feb`.
 - **The experiment can't be inferred reliably.** HK25 has no experiment field (`experiment_id: hackathon`
   everywhere). Dates and names give a guess, marked `km_scale:experiment_inferred` on each Item. Several runs start
   on 1 Jan 2020, not on the DYAMOND3 start date. Producers need to set the experiment (the vocabulary plan).

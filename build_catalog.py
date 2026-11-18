@@ -242,7 +242,7 @@ def datacube(zmeta, zoom, freq, meta, coords=None):
         attrs = arrays.get(d, ({},))[0]
         sn = attrs.get("standard_name", "")
         if d == "time" or sn == "time":
-            o = {"type": "temporal"}
+            o = {"type": "temporal", "count": n}
             if d in coords and coords[d]:
                 o["extent"] = [coords[d][0], coords[d][-1]]  # from the data
             elif meta.get("time_start") and meta.get("time_end"):
@@ -429,6 +429,27 @@ def build(hk25_root, out, probe=True):
                                        coords.get((dsid, key.split(".")[0])))
             a["cube:dimensions"], a["cube:variables"] = dims, variables
 
+        # metadata time range vs the stores' own time coordinates (HK25's fail-on-mismatch rule, applied to contents)
+        from datetime import datetime
+        def _t(x):
+            return datetime.fromisoformat(x.replace("Z", "+00:00"))
+        for dsid, it in items.items():
+            p_ = it["props"]
+            if "start_datetime" not in p_:
+                continue
+            seen = set()
+            for key, a in it["assets"].items():
+                freq = key.split(".")[0]
+                t = next((d for d in a.get("cube:dimensions", {}).values() if d["type"] == "temporal" and "extent" in d), None)
+                if not t or freq in seen:
+                    continue
+                seen.add(freq)
+                off = max(abs((_t(t["extent"][0]) - _t(p_["start_datetime"])).days),
+                          abs((_t(t["extent"][1]) - _t(p_["end_datetime"])).days))
+                if off > 1:
+                    problems.append(f"{dsid}: {freq} data run {t['extent'][0]} to {t['extent'][1]}, metadata says "
+                                    f"{p_['start_datetime']} to {p_['end_datetime']}")
+
     # 3. write the tree
     if out.exists():
         shutil.rmtree(out)
@@ -574,6 +595,7 @@ def build(hk25_root, out, probe=True):
     (out / "sites.json").write_text(json.dumps(sites, indent=1))
     (out / "problems.txt").write_text("\n".join(problems) + "\n")
     shutil.copy(HERE / "page/index.html", out / "index.html")
+    shutil.copy(HERE / "page/item.html", out / "item.html")
     shutil.copy(HERE / "km_scale.py", out / "km_scale.py")
     n_assets = sum(len(it["assets"]) for it in items.values())
     n_cube = sum("cube:variables" in a for it in items.values() for a in it["assets"].values())

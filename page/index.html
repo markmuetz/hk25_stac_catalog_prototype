@@ -194,7 +194,7 @@ function card(e) {
   const warn = e.site_only ? `<span class="warn">only at ${esc(e.site_only.join(", "))}</span>` : "";
   const lic = e.license === "other" ? (e.license_text ? "see licence text" : "unknown") : e.license;
   return `<li>
-    <h3>${esc(e.title)}</h3><div class="id">${esc(e.id)}</div>
+    <h3><a href="item.html#${encodeURIComponent(e.id)}" style="color:inherit;text-decoration:none">${esc(e.title)}</a></h3><div class="id">${esc(e.id)}</div>
     <div class="tags">${tags}${warn}</div>
     <div class="note">${esc((e.start || "?").slice(0, 10))} to ${esc((e.end || "?").slice(0, 10))} · sites: ${esc(e.sites.join(", "))}
       · licence: ${esc(lic)}</div>
@@ -202,7 +202,7 @@ function card(e) {
     <pre>${esc(snippet(e))}</pre>
     ${e.variables.length ? `<details><summary>${e.variables.length} variables</summary><div class="vars">${esc(e.variables.join(", "))}</div></details>` : `<div class="note">variables: not read (store not online)</div>`}
     ${e.license_text ? `<details><summary>licence text</summary><div class="vars">${esc(e.license_text)}</div></details>` : ""}
-    <div class="links"><a href="${esc(e.item)}">STAC Item</a>${e.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(e.gridlook)}">gridlook</a>` : ""}</div>
+    <div class="links"><a href="item.html#${encodeURIComponent(e.id)}">Details</a><a href="${esc(e.item)}">JSON</a>${e.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(e.gridlook)}">gridlook</a>` : ""}</div>
   </li>`;
 }
 
