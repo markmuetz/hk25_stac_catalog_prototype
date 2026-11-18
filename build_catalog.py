@@ -39,6 +39,13 @@ EXT = {
     "processing": "https://stac-extensions.github.io/processing/v1.3.0/schema.json",
 }
 GLOBAL_BBOX = [-180.0, -90.0, 180.0, 90.0]
+BRANCH_DESCRIPTIONS = {
+    "simulations": "Model output, one Collection per model.",
+    "observations": "Observational products.",
+    "reanalyses": "Reanalyses.",
+    "MCS-tracks": "Mesoscale convective system tracks, one Collection per tracker.",
+    "TC-tracks": "Tropical cyclone tracks, one Collection per tracker.",
+}
 GLOBAL_GEOM = {"type": "Polygon", "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]}
 
 # --- classification of HK25 ids (the HK25 catalogue has no product type or model field) -----------------------------
@@ -478,7 +485,7 @@ def build(hk25_root, out, probe=True):
             zooms = sorted({a["km_scale:zoom"] for a in it["assets"].values() if "km_scale:zoom" in a})
             p = it["props"]
             index.append({
-                "id": dsid, "title": p["title"], "collection": coll, "branch": branch,
+                "id": dsid, "title": p["title"], "collection": coll, "branch": branch, "path": f"{branch}/{coll}",
                 "product_type": p["km_scale:product_type"], "experiment": p.get("km_scale:experiment"),
                 "domain": p["km_scale:domain"], "source_id": p.get("km_scale:source_id"),
                 "resolution": p.get("km_scale:resolution"), "start": p.get("start_datetime"),
@@ -491,6 +498,7 @@ def build(hk25_root, out, probe=True):
         summ = {"km_scale:experiment": sorted({items[i]["props"].get("km_scale:experiment") for i in ids} - {None}),
                 "km_scale:domain": sorted({items[i]["props"]["km_scale:domain"] for i in ids})}
         summ = {k: v for k, v in summ.items() if v}  # empty summaries are invalid STAC
+        provs = sorted({pr["name"] for i in ids for pr in items[i]["props"].get("providers", [])})
         write(cpath, {
             "type": "Collection", "stac_version": STAC_VERSION, "stac_extensions": [], "id": coll,
             "title": items[ids[0]]["coll_title"],
@@ -498,7 +506,8 @@ def build(hk25_root, out, probe=True):
             "license": lic.pop() if len(lic) == 1 else "other",
             "extent": {"spatial": {"bbox": [GLOBAL_BBOX]},
                        "temporal": {"interval": [[starts[0] if starts else None, ends[-1] if ends else None]]}},
-            "summaries": summ, "links": links})
+            "summaries": summ, "links": links,
+            **({"providers": [{"name": n, "roles": ["producer"]} for n in provs]} if provs else {})})
 
     # branch catalogs (simulations, observations, reanalyses, derived/<feature>-tracks under derived)
     def catalog(path, cid, title, desc, children, items_links=()):
@@ -515,7 +524,8 @@ def build(hk25_root, out, probe=True):
     derived_children = []
     for branch, children in sorted(branch_children.items()):
         p = stac / branch / "catalog.json"
-        catalog(p, branch.replace("/", "-"), branch.split("/")[-1], f"{branch} datasets", children)
+        name = branch.split("/")[-1]
+        catalog(p, branch.replace("/", "-"), name, BRANCH_DESCRIPTIONS.get(name, f"{name} datasets"), children)
         if branch.startswith("derived/"):
             derived_children.append(p)
         else:
@@ -539,8 +549,24 @@ def build(hk25_root, out, probe=True):
     catalog(p, "by-experiment", "by experiment", "Generated views: links to Items, grouped by experiment.",
             exp_children)
     top.append(p)
+    ORDER = ["simulations", "observations", "reanalyses", "derived", "by-experiment"]
+    top.sort(key=lambda c: ORDER.index(c.parent.name) if c.parent.name in ORDER else 99)
     catalog(root_path, "km-scale-hk25-example", "HK25 catalogue as STAC (HK27 prototype)",
             "Example static STAC catalogue generated from the HK25 Intake catalogue.", top)
+
+    # tree for the page, generated from the STAC links so the two can't disagree (by-experiment views left out)
+    def node(path):
+        d = json.loads(path.read_text())
+        n = {"id": d["id"], "title": d.get("title") or d["id"], "type": d["type"],
+             "path": str(path.parent.relative_to(stac.resolve())), "href": str(path.relative_to(out.resolve())),
+             "description": d.get("description")}
+        for k in ("license", "summaries", "providers", "extent"):
+            if k in d:
+                n[k] = d[k]
+        kids = [path.parent / l["href"] for l in d["links"] if l["rel"] == "child"]
+        n["children"] = [node(c.resolve()) for c in kids if "by-experiment" not in str(c)]
+        return n
+    (out / "tree.json").write_text(json.dumps(node(root_path.resolve()), indent=0))
 
     # 4. index, site table, problems, page
     (out / "index.json").write_text(json.dumps(index, indent=0))

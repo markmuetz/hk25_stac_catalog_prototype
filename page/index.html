@@ -12,7 +12,34 @@
   @media (prefers-color-scheme: dark) {
     :root { --fg: white; --bg: black; --hi: rgb(255, 247, 0); --hi-faint: rgb(39, 37, 1); --muted: #aaa; --line: #333; }
   }
-  body { margin: 0 auto; max-width: 1200px; padding: 1em; }
+  body { margin: 0 auto; max-width: 1440px; padding: 1em; }
+  .layout { display: grid; grid-template-columns: 250px 1fr; gap: 1.5em; align-items: start; }
+  nav.tree { position: sticky; top: .5em; max-height: calc(100vh - 1em); overflow-y: auto; font-size: .9em;
+    border-right: 1px solid var(--line); padding-right: .8em; }
+  nav.tree h2 { font-size: .8em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: .2em 0 .4em; }
+  nav.tree ul { list-style: none; margin: 0; padding-left: 1em; }
+  nav.tree > ul { padding-left: 0; }
+  nav.tree li { margin: 1px 0; }
+  nav.tree .row { display: flex; align-items: center; gap: .2em; }
+  nav.tree .tog { width: 1.2em; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0; font-size: .8em; }
+  nav.tree .tog.leaf { visibility: hidden; }
+  nav.tree a.node { flex: 1; display: flex; justify-content: space-between; gap: .5em; color: var(--fg); text-decoration: none;
+    padding: 0 .4em; border-radius: 3px; cursor: pointer; }
+  nav.tree a.node:hover { background: var(--hi-faint); }
+  nav.tree a.node.sel { outline: 1px solid var(--hi); color: var(--hi); }
+  nav.tree a.node.empty { color: var(--muted); opacity: .5; }
+  nav.tree a.node.coll .label { font-family: ui-monospace, monospace; font-size: .95em; }
+  nav.tree .n { color: var(--muted); font-size: .85em; }
+  .head { border: 1px solid var(--line); border-radius: 6px; padding: .6em .9em; margin: .2em 0 .8em; }
+  .head h2 { margin: 0; font-size: 1.1em; }
+  .head .kind { font-size: .75em; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .head dl { display: grid; grid-template-columns: max-content 1fr; gap: 0 .8em; margin: .4em 0 0; font-size: .85em; }
+  .head dt { color: var(--muted); }
+  .head dd { margin: 0; }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.tree { position: static; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 .5em; }
+  }
   h1 { font-size: 1.4em; margin: 0 0 .2em; }
   p.lead { color: var(--muted); margin-top: 0; max-width: 800px; }
   .controls { display: flex; flex-wrap: wrap; gap: .6em; align-items: end; margin: 1em 0; }
@@ -51,10 +78,12 @@
 <a href="stac/catalog.json">stac/catalog.json</a>. Experiment, domain and product type are <em>inferred</em> from HK25
 ids and metadata.</p>
 
+<div class="layout">
+<nav class="tree" id="tree"><h2>Catalogue</h2></nav>
+<main>
+<div id="head"></div>
 <div class="controls">
   <label>Search<input id="q" type="search" placeholder="id, title, model, variable, e.g. p4k, rlut, CoMA9"></label>
-  <label>Product type<select id="f-product_type"></select></label>
-  <label>Collection<select id="f-collection"></select></label>
   <label>Experiment<select id="f-experiment"></select></label>
   <label>Domain<select id="f-domain"></select></label>
   <label>Available at site<select id="f-sites"></select></label>
@@ -65,18 +94,21 @@ ids and metadata.</p>
 <div class="tabs"><button id="t-list" class="on">Datasets</button> <button id="t-matrix">Variable × dataset</button></div>
 <div id="list"></div>
 <div id="matrix" class="matrix" hidden></div>
+</main>
+</div>
 <p class="note">Open any dataset the same way at every node: <code>km_scale.open_dataset(id, freq, zoom)</code> (gridded data),
 <code>open_table</code> (tracks), <code>get_url</code> (anything else); <code>km_scale.where(id)</code> shows which copy each site reads. The site
 comes from <code>KM_SCALE_USER_LOCATION</code> on each JupyterHub; see <a href="sites.yaml">sites.yaml</a>.</p>
 
 <script>
-const FACETS = ["product_type", "collection", "experiment", "domain", "sites", "frequencies"];
+const FACETS = ["experiment", "domain", "sites", "frequencies"];
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-let DATA = [], view = "list";
+let DATA = [], UNREAD = [], TREE = null, view = "list", sel = ".";
+const collapsed = new Set();
 
-fetch("index.json").then(r => r.json()).then(d => {
-  DATA = d;
+Promise.all([fetch("index.json").then(r => r.json()), fetch("tree.json").then(r => r.json())]).then(([d, t]) => {
+  DATA = d; TREE = t;
   for (const f of FACETS) {
     const vals = [...new Set(d.flatMap(e => [].concat(e[f] ?? [])))].sort();
     $("f-" + f).innerHTML = `<option value="">any</option>` + vals.map(v => `<option>${esc(v)}</option>`).join("");
@@ -89,13 +121,52 @@ fetch("index.json").then(r => r.json()).then(d => {
   const p = new URLSearchParams(location.hash.slice(1));
   if (p.get("q")) $("q").value = p.get("q");
   if (p.get("view") === "matrix") view = "matrix";
+  if (p.get("path")) sel = p.get("path");
   for (const f of FACETS.concat(["variables"])) if (p.get(f)) $("f-" + f).value = p.get(f);
   render();
 });
 
-function filtered() {
+const under = (e, path) => path === "." || e.path === path || e.path.startsWith(path + "/");
+
+function findNode(n, path) {
+  if (n.path === path) return n;
+  for (const c of n.children) { const f = findNode(c, path); if (f) return f; }
+  return null;
+}
+
+function treeHTML(n, rows) {
+  const k = rows.filter(e => under(e, n.path)).length;
+  // with a variable filter, datasets whose variables couldn't be read (site-only) are unknown, not absent
+  const unread = UNREAD.filter(e => under(e, n.path)).length;
+  const kids = n.children;
+  const open = !collapsed.has(n.path);
+  const label = n.path === "." ? "All datasets" : (n.type === "Collection" ? n.id : n.title);
+  return `<li><div class="row">
+      <button class="tog${kids.length ? "" : " leaf"}" data-tog="${esc(n.path)}" aria-label="expand">${open ? "▾" : "▸"}</button>
+      <a class="node${n.type === "Collection" ? " coll" : ""}${n.path === sel ? " sel" : ""}${k || unread ? "" : " empty"}"
+         data-path="${esc(n.path)}" title="${esc(n.title)}${unread ? ` (${unread} with variables not read)` : ""}"><span class="label">${esc(label)}</span><span class="n">${k}${unread ? `+${unread}?` : ""}</span></a>
+    </div>${kids.length && open ? `<ul>${kids.map(c => treeHTML(c, rows)).join("")}</ul>` : ""}</li>`;
+}
+
+function headHTML(n) {
+  if (!n || n.path === ".") return "";
+  const s = n.summaries || {};
+  const t = n.extent?.temporal?.interval?.[0];
+  const rows = [
+    ["licence", n.license], ["providers", (n.providers || []).map(p => p.name).join(", ")],
+    ["period", t ? `${(t[0] || "?").slice(0, 10)} to ${(t[1] || "?").slice(0, 10)}` : ""],
+    ["experiments", (s["km_scale:experiment"] || []).join(", ")], ["domains", (s["km_scale:domain"] || []).join(", ")],
+    ["contains", n.children.length ? n.children.map(c => c.type === "Collection" ? c.id : c.title).join(", ") : ""],
+  ].filter(r => r[1]);
+  return `<div class="head"><div class="kind">${esc(n.type)} · ${esc(n.path)}</div><h2>${esc(n.title)}</h2>
+    ${n.description ? `<div class="note">${esc(n.description)}</div>` : ""}
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+    <div class="links"><a href="${esc(n.href)}">STAC ${esc(n.type)} JSON</a></div></div>`;
+}
+
+function filtered(skipVar = false) {
   const q = $("q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const v = $("f-variables").value.trim();
+  const v = skipVar ? "" : $("f-variables").value.trim();
   return DATA.filter(e => {
     for (const f of FACETS) {
       const want = $("f-" + f).value;
@@ -143,7 +214,11 @@ function matrix(rows) {
 }
 
 function render() {
-  const rows = filtered();
+  const base = filtered();                       // every filter except the tree
+  UNREAD = $("f-variables").value.trim() ? filtered(true).filter(e => !e.variables.length) : [];
+  const rows = base.filter(e => under(e, sel));
+  $("tree").innerHTML = `<h2>Catalogue</h2><ul>${treeHTML(TREE, base)}</ul>`;
+  $("head").innerHTML = headHTML(findNode(TREE, sel));
   $("count").textContent = `${rows.length} of ${DATA.length} datasets`;
   $("t-list").classList.toggle("on", view === "list"); $("t-matrix").classList.toggle("on", view === "matrix");
   $("list").hidden = view !== "list"; $("matrix").hidden = view !== "matrix";
@@ -152,9 +227,15 @@ function render() {
   const p = new URLSearchParams();
   if ($("q").value) p.set("q", $("q").value);
   if (view === "matrix") p.set("view", "matrix");
+  if (sel !== ".") p.set("path", sel);
   for (const f of FACETS.concat(["variables"])) if ($("f-" + f).value) p.set(f, $("f-" + f).value);
   history.replaceState(null, "", "#" + p.toString());
 }
+$("tree").addEventListener("click", ev => {
+  const t = ev.target.closest("[data-tog]"), a = ev.target.closest("[data-path]");
+  if (t) { const k = t.dataset.tog; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); }
+  else if (a) { sel = a.dataset.path === sel && sel !== "." ? "." : a.dataset.path; render(); }
+});
 </script>
 </body>
 </html>

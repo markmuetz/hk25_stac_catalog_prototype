@@ -18,6 +18,9 @@ the model proposed for HK27:
 - **a controlled vocabulary check** (`config/vocab.yaml`);
 - **a flat `index.json` and a static search page:** facets, free text, a variable × dataset matrix, and per-dataset
   snippets and gridlook links.
+  A tree of the catalogue hierarchy on the left, generated from the STAC links into `tree.json`, is the filter for
+  product type and Collection. Its counts follow the other filters; `+n?` marks datasets whose variables couldn't be
+  read. Selecting a Catalog or Collection shows its shared properties (licence, providers, period, summaries).
 
 ## Run
 
