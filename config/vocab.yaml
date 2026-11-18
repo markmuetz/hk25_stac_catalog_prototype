@@ -1,0 +1,22 @@
+# Controlled vocabulary (prototype). CI fails any Item whose km_scale:* value is not listed here.
+
+product_type:
+  simulation: Model output.
+  observation: Observational product.
+  reanalysis: Reanalysis.
+  derived: Processed from another dataset (e.g. feature tracks).
+
+experiment:
+  dyamond3: DYAMOND3 period (2020-01-20 to 2021-03-01), control SSTs.
+  dyamond3-p4k: DYAMOND3 period with SST + 4 K.
+  dyamond1: DYAMOND summer (2016-08-01 to 2016-09-10).
+  dyamond2: DYAMOND winter (2020-01-20 to 2020-03-01).
+  other: Not one of the protocol experiments (tests, sensitivity runs, other periods).
+
+domain:
+  global: Global.
+  regional: Limited area or regional nest.
+
+feature:
+  mcs: Mesoscale convective systems.
+  tc: Tropical cyclones.

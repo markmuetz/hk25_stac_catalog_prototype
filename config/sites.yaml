@@ -1,0 +1,30 @@
+# Site table: published with the catalogue as data.
+# Each site lists what belongs to its network, not to any dataset.
+# endpoint_overrides: on this site, rewrite an href prefix (online -> site-internal route to the same objects).
+# Successor to HK25's availability_zones.yaml.
+
+online:
+  description: Anywhere with internet access.
+
+UK:
+  description: JASMIN (UK node).
+  endpoint_overrides:
+    "https://hackathon-o.s3-ext.jc.rl.ac.uk/": "http://hackathon-o.s3.jc.rl.ac.uk/"
+
+EU:
+  description: DKRZ Levante (EU node).
+
+NERSC:
+  description: NERSC Perlmutter.
+
+NCAR:
+  description: NCAR Derecho.
+
+JAPAN:
+  description: Japan node.
+
+CN:
+  description: China node (earthlab).
+
+Aus:
+  description: NCI Gadi (Australia node).

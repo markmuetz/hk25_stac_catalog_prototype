@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HK25 catalogue as STAC: search prototype</title>
+<style>
+  :root {
+    --bg: white; --fg: black; --hi: rgb(0, 76, 255); --hi-faint: rgb(197, 219, 255); --muted: #666; --line: #ddd;
+    font-family: system-ui, sans-serif; line-height: 1.5; color-scheme: light dark; color: var(--fg); background: var(--bg);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: white; --bg: black; --hi: rgb(255, 247, 0); --hi-faint: rgb(39, 37, 1); --muted: #aaa; --line: #333; }
+  }
+  body { margin: 0 auto; max-width: 1200px; padding: 1em; }
+  h1 { font-size: 1.4em; margin: 0 0 .2em; }
+  p.lead { color: var(--muted); margin-top: 0; max-width: 800px; }
+  .controls { display: flex; flex-wrap: wrap; gap: .6em; align-items: end; margin: 1em 0; }
+  .controls label { display: flex; flex-direction: column; font-size: .8em; color: var(--muted); }
+  .controls input, .controls select { font-size: 1rem; padding: .2em .4em; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; }
+  #q { min-width: 18em; }
+  .count { margin-left: auto; color: var(--muted); }
+  .tabs button { font-size: .95em; background: none; color: var(--fg); border: 1px solid var(--line); padding: .3em .8em;
+    border-radius: 4px; cursor: pointer; }
+  .tabs button.on { border-color: var(--hi); color: var(--hi); }
+  ul.ds { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: .8em; }
+  ul.ds li { border: 1px solid var(--line); border-radius: 6px; padding: .7em .9em; }
+  ul.ds h3 { margin: 0; font-size: 1em; }
+  .id, code, pre { font-family: ui-monospace, monospace; font-size: .85em; }
+  .id { color: var(--muted); word-break: break-all; }
+  .tags span { display: inline-block; font-size: .75em; padding: 0 .5em; margin: .15em .2em 0 0; border-radius: 3px;
+    background: var(--hi-faint); }
+  .tags span.warn { background: #f6d2b8; color: black; }
+  pre { background: var(--hi-faint); padding: .4em .6em; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: .4em 0; }
+  details summary { cursor: pointer; font-size: .85em; color: var(--muted); }
+  .vars { font-size: .8em; }
+  .links a { font-size: .85em; margin-right: .8em; color: var(--hi); }
+  table.m { border-collapse: collapse; font-size: .75em; }
+  table.m th, table.m td { border: 1px solid var(--line); padding: 1px 4px; }
+  table.m th.ds { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 16em; text-align: left; }
+  table.m td.y { background: var(--hi); }
+  .matrix { overflow: auto; max-height: 80vh; }
+  .note { font-size: .85em; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>HK25 catalogue as STAC: search prototype</h1>
+<p class="lead">Generated from the HK25 Intake catalogue as an experiment for HK27. Everything here is static: a flat
+<code>index.json</code> built by CI from the STAC Items, filtered in the browser. The STAC tree is at
+<a href="stac/catalog.json">stac/catalog.json</a>. Experiment, domain and product type are <em>inferred</em> from HK25
+ids and metadata.</p>
+
+<div class="controls">
+  <label>Search<input id="q" type="search" placeholder="id, title, model, variable, e.g. p4k, rlut, CoMA9"></label>
+  <label>Product type<select id="f-product_type"></select></label>
+  <label>Collection<select id="f-collection"></select></label>
+  <label>Experiment<select id="f-experiment"></select></label>
+  <label>Domain<select id="f-domain"></select></label>
+  <label>Available at site<select id="f-sites"></select></label>
+  <label>Frequency<select id="f-frequencies"></select></label>
+  <label>Variable<input id="f-variables" list="varlist" placeholder="any"><datalist id="varlist"></datalist></label>
+  <span class="count" id="count"></span>
+</div>
+<div class="tabs"><button id="t-list" class="on">Datasets</button> <button id="t-matrix">Variable × dataset</button></div>
+<div id="list"></div>
+<div id="matrix" class="matrix" hidden></div>
+<p class="note">Open any dataset the same way at every node: <code>km_scale.open_asset(id, freq, zoom)</code>. The site
+comes from <code>KM_SCALE_USER_LOCATION</code> on each JupyterHub; see <a href="sites.yaml">sites.yaml</a>.</p>
+
+<script>
+const FACETS = ["product_type", "collection", "experiment", "domain", "sites", "frequencies"];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+let DATA = [], view = "list";
+
+fetch("index.json").then(r => r.json()).then(d => {
+  DATA = d;
+  for (const f of FACETS) {
+    const vals = [...new Set(d.flatMap(e => [].concat(e[f] ?? [])))].sort();
+    $("f-" + f).innerHTML = `<option value="">any</option>` + vals.map(v => `<option>${esc(v)}</option>`).join("");
+    $("f-" + f).onchange = render;
+  }
+  $("varlist").innerHTML = [...new Set(d.flatMap(e => e.variables))].sort().map(v => `<option value="${esc(v)}">`).join("");
+  $("q").oninput = render; $("f-variables").oninput = render;
+  $("t-list").onclick = () => { view = "list"; render(); };
+  $("t-matrix").onclick = () => { view = "matrix"; render(); };
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.get("q")) $("q").value = p.get("q");
+  if (p.get("view") === "matrix") view = "matrix";
+  for (const f of FACETS.concat(["variables"])) if (p.get(f)) $("f-" + f).value = p.get(f);
+  render();
+});
+
+function filtered() {
+  const q = $("q").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const v = $("f-variables").value.trim();
+  return DATA.filter(e => {
+    for (const f of FACETS) {
+      const want = $("f-" + f).value;
+      if (want && ![].concat(e[f] ?? []).includes(want)) return false;
+    }
+    if (v && !e.variables.includes(v)) return false;
+    const hay = [e.id, e.title, e.collection, e.source_id, e.experiment, e.description, ...e.variables].join(" ").toLowerCase();
+    return q.every(t => hay.includes(t));
+  });
+}
+
+function snippet(e) {
+  const f = e.frequencies.find(x => x.startsWith("PT1H")) ?? e.frequencies.find(x => x !== "static") ?? e.frequencies[0];
+  const z = e.zooms.length ? (e.zooms.includes(8) ? 8 : Math.max(...e.zooms.filter(z => z <= 8), Math.min(...e.zooms))) : null;
+  return `import km_scale\nds = km_scale.open_asset("${e.id}", freq="${f}"${z === null ? ", zoom=None" : `, zoom=${z}`})`;
+}
+
+function card(e) {
+  const tags = [e.product_type, e.collection, e.experiment, e.domain, e.resolution].filter(Boolean)
+    .map(t => `<span>${esc(t)}</span>`).join("");
+  const warn = e.site_only ? `<span class="warn">only at ${esc(e.site_only.join(", "))}</span>` : "";
+  const lic = e.license === "other" ? (e.license_text ? "see licence text" : "unknown") : e.license;
+  return `<li>
+    <h3>${esc(e.title)}</h3><div class="id">${esc(e.id)}</div>
+    <div class="tags">${tags}${warn}</div>
+    <div class="note">${esc((e.start || "?").slice(0, 10))} to ${esc((e.end || "?").slice(0, 10))} · sites: ${esc(e.sites.join(", "))}
+      · licence: ${esc(lic)}</div>
+    <div class="note">frequencies: ${esc(e.frequencies.join(", "))}${e.zooms.length ? ` · zooms ${Math.min(...e.zooms)}–${Math.max(...e.zooms)}` : ""}</div>
+    <pre>${esc(snippet(e))}</pre>
+    ${e.variables.length ? `<details><summary>${e.variables.length} variables</summary><div class="vars">${esc(e.variables.join(", "))}</div></details>` : `<div class="note">variables: not read (store not online)</div>`}
+    ${e.license_text ? `<details><summary>licence text</summary><div class="vars">${esc(e.license_text)}</div></details>` : ""}
+    <div class="links"><a href="${esc(e.item)}">STAC Item</a>${e.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(e.gridlook)}">gridlook</a>` : ""}</div>
+  </li>`;
+}
+
+function matrix(rows) {
+  rows = rows.filter(e => e.variables.length);
+  const counts = {};
+  rows.forEach(e => e.variables.forEach(v => counts[v] = (counts[v] || 0) + 1));
+  const vars = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+  if (!rows.length) return "<p>No datasets with variables read.</p>";
+  return `<table class="m"><tr><th>variable</th><th>n</th>${rows.map(e => `<th class="ds" title="${esc(e.title)}">${esc(e.id)}</th>`).join("")}</tr>` +
+    vars.map(v => `<tr><th>${esc(v)}</th><td>${counts[v]}</td>${rows.map(e => e.variables.includes(v) ? `<td class="y" title="${esc(e.id)}: ${esc(v)}"></td>` : "<td></td>").join("")}</tr>`).join("") +
+    "</table>";
+}
+
+function render() {
+  const rows = filtered();
+  $("count").textContent = `${rows.length} of ${DATA.length} datasets`;
+  $("t-list").classList.toggle("on", view === "list"); $("t-matrix").classList.toggle("on", view === "matrix");
+  $("list").hidden = view !== "list"; $("matrix").hidden = view !== "matrix";
+  if (view === "list") $("list").innerHTML = `<ul class="ds">${rows.map(card).join("")}</ul>`;
+  else $("matrix").innerHTML = matrix(rows);
+  const p = new URLSearchParams();
+  if ($("q").value) p.set("q", $("q").value);
+  if (view === "matrix") p.set("view", "matrix");
+  for (const f of FACETS.concat(["variables"])) if ($("f-" + f).value) p.set(f, $("f-" + f).value);
+  history.replaceState(null, "", "#" + p.toString());
+}
+</script>
+</body>
+</html>
