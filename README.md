@@ -66,3 +66,47 @@ shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacu
   coverage check would flag them at once.
 - **A spec wrinkle:** the cf extension README allows `cf:cell_methods` as a plain string, but its v1.0.0 schema only
   accepts an array.
+
+## Lessons from building it
+
+**Source catalogue (HK25 Intake):**
+- `urlpath` templates use full Jinja, including `{% with time_map = {...} %}` lookup tables. Rendering them with
+  `jinja2.Template(...).render(**params)` for every allowed combination reproduces Intake exactly: 1931
+  combinations across all nodes, with no rendering errors.
+- `urlpath` lists mean "open these together": a static store as the second URL (UM v5), or 2D and 3D kerchunk
+  parts (IFS). Each element needs its own asset (`static.z9`, `..._part2`).
+- Intake parameters are independent lists, so an entry advertises the full cross product even when only some
+  combinations exist. STAC assets list only what exists; probing every store is what exposes the gap.
+- Parameter order varies, and zoom ranges differ per node (NERSC's copy of `um_glm_n2560_RAL3p3` has no z0). The
+  resolver has to fall back to the online copy per asset, not per dataset.
+
+**STAC schemas (validate early; the READMEs aren't enough):**
+- datacube: vertical (`axis: z`) and additional dimensions need `values` or `extent`, so count alone fails.
+  A custom `type: "healpix"` is accepted as an additional dimension.
+- cf v1.0.0: `cf:cell_methods` must be an array, although the README shows a plain string.
+- Collection `summaries` can't contain empty lists.
+- An Item linked from a `by-experiment/` view is reached twice when walking the tree, so the validator has to
+  deduplicate by id (caveat 2 in the design doc, confirmed).
+- `datetime: null` needs `start_datetime` and `end_datetime`. Items without a time range need a placeholder,
+  flagged in `problems.txt`.
+
+**Reading stores:**
+- Fetching `.zmetadata` (v2) or `zarr.json` (v3) directly over HTTPS is enough for variables, units, standard
+  names, dimensions and shapes: 930 stores in a few seconds with 48 threads. Coordinate values (levels, first and
+  last time) need a real open: `xr.open_zarr` with zarr 3, on one store per frequency (87 opens).
+- zarr 2 (`numcodecs`) failed to build under uv's default Python 3.14. Use zarr 3, which reads v2 stores fine,
+  and pin Python <3.14 for now.
+- float32 coordinates need `float(str(x))`, or the JSON carries noise (0.05000000074505806).
+- Grid-mapping variables (`crs`) show up as data variables. Mark them `auxiliary` (no time dimension) and leave
+  them out of the search index.
+- HK25 UM stores use the dimension name `healpix_index`; HK27 will use `cell` with `standard_name = healpix_index`.
+
+**Metadata:**
+- Experiment can't be inferred: a "covers the DYAMOND3 period" rule tags 33 runs, but some start on 1 Jan 2020 and
+  observations have no experiment at all. Only simulations get one, marked `km_scale:experiment_inferred`.
+- Licence texts are free-form: the UM's "Crown Copyright … Non-Commercial Research Use only" maps to `other` and
+  needs a `license` link; 27 datasets have none.
+
+**Practical:**
+- Local port 8765 is taken on this Mac (an Epic Games HTTP server); the page is served on 8793.
+- The page needs HTTP (it fetches `index.json`), not `file://`.

@@ -218,7 +218,7 @@ def read_coords(url, dims):
                 v = c.values[[0, -1]] if c.size > 1 else c.values
                 out[d] = [str(np.datetime_as_string(x, unit="s")) + "Z" for x in v]
             elif c.size <= 1000 and np.issubdtype(c.dtype, np.number):
-                out[d] = [float(x) if np.issubdtype(c.dtype, np.floating) else int(x) for x in c.values]
+                out[d] = [float(str(x)) if np.issubdtype(c.dtype, np.floating) else int(x) for x in c.values]  # str(): float32 without noise
         except Exception:
             pass
     return out
