@@ -65,7 +65,8 @@ ids and metadata.</p>
 <div class="tabs"><button id="t-list" class="on">Datasets</button> <button id="t-matrix">Variable × dataset</button></div>
 <div id="list"></div>
 <div id="matrix" class="matrix" hidden></div>
-<p class="note">Open any dataset the same way at every node: <code>km_scale.open_asset(id, freq, zoom)</code>. The site
+<p class="note">Open any dataset the same way at every node: <code>km_scale.open_dataset(id, freq, zoom)</code> (gridded data),
+<code>open_table</code> (tracks), <code>get_url</code> (anything else); <code>km_scale.where(id)</code> shows which copy each site reads. The site
 comes from <code>KM_SCALE_USER_LOCATION</code> on each JupyterHub; see <a href="sites.yaml">sites.yaml</a>.</p>
 
 <script>
@@ -109,7 +110,7 @@ function filtered() {
 function snippet(e) {
   const f = e.frequencies.find(x => x.startsWith("PT1H")) ?? e.frequencies.find(x => x !== "static") ?? e.frequencies[0];
   const z = e.zooms.length ? (e.zooms.includes(8) ? 8 : Math.max(...e.zooms.filter(z => z <= 8), Math.min(...e.zooms))) : null;
-  return `import km_scale\nds = km_scale.open_asset("${e.id}", freq="${f}"${z === null ? ", zoom=None" : `, zoom=${z}`})`;
+  return `import km_scale\nds = km_scale.open_dataset("${e.id}", freq="${f}"${z === null ? ", zoom=None" : `, zoom=${z}`})`;
 }
 
 function card(e) {

@@ -8,7 +8,9 @@ the model proposed for HK27:
   alternate assets keyed by site;
 - **a site table** (`config/sites.yaml`) for rules that belong to a site's network, e.g. JASMIN's internal
   endpoint;
-- **`km_scale.resolve` / `open_asset`** as the one way to open data;
+- **`km_scale`**, named by what each function returns: `open_dataset` (xarray), `open_datatree` (all zooms),
+  `open_table` (pandas), `get_url` (anything). All take `location=` (where you are) and `source=` (force a copy);
+  `where()` and the `km_scale_source`/`km_scale_copy` attrs show where data comes from;
 - **datacube + cf** on each asset, generated from consolidated Zarr metadata, with levels and the first and last
   times read from the coarsest store;
 - **hierarchy:** `simulations/`, `observations/`, `reanalyses/` and `derived/MCS-tracks/<tracker>/` Catalogs, with
@@ -29,8 +31,9 @@ cd build && python3 -m http.server 8793 --bind 127.0.0.1             # then open
 
 ```python
 import km_scale                                   # build/km_scale.py; KM_SCALE_CATALOG=<build dir or URL>
-km_scale.resolve("um_glm_n2560_RAL3p3_tuned_hk26", "PT1H", 0, location="UK")   # JASMIN-internal URL, via the site table
-ds = km_scale.open_asset("um_glm_n2560_RAL3p3_tuned_hk26", "PT1H", 0)          # online copy
+km_scale.get_url("um_glm_n2560_RAL3p3_tuned_hk26", "PT1H", 0, location="UK")   # JASMIN-internal URL, via the site table
+ds = km_scale.open_dataset("um_glm_n2560_RAL3p3_tuned_hk26", "PT1H", 0)        # online copy; ds.attrs["km_scale_copy"]
+km_scale.where("um_glm_n2560_RAL3p3", "PT1H", 1)                               # which copy each site would read
 km_scale.search(experiment="dyamond3-p4k")
 ```
 
@@ -46,8 +49,8 @@ shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacu
   - 58 Items in 16 Collections, with 1139 assets (797 with datacube). All 86 Catalogs, Collections and Items
     validate against the core and extension schemas.
   - `index.json` is 76 kB.
-  - `km_scale.open_asset` opened a UM store from the Mac.
-  - `resolve()` gave the JASMIN-internal URL for UK, the filesystem path for NERSC, the online copy when a site
+  - `km_scale.open_dataset` opened a UM store from the Mac.
+  - `get_url()` gave the JASMIN-internal URL for UK, the filesystem path for NERSC, the online copy when a site
     lacks a zoom, and "only available at NCAR" for site-only data.
 - **The site table replaced every UK copy.** 486 assets of datasets held at both UK and online needed no UK
   alternate; one line in `sites.yaml` covers them. The alternates kept are genuinely separate copies: NERSC 184,
