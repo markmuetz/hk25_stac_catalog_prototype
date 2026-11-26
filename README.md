@@ -55,6 +55,34 @@ HK25 has one store per zoom, so assets here are keyed `<freq>.z<zoom>` (e.g. `PT
 HK27 stores will hold zoom groups, so assets would be keyed `<freq>` and list their refinement levels. That also
 shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacube.
 
+## STAC extensions used (as of 2026-11-26)
+
+From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set. Collections declare none.
+
+| Extension | Where | How |
+|---|---|---|
+| alternate-assets v1.2.0 | every Item | Genuinely separate copies at other sites (NERSC path, Waterpark mirror, ...) are `alternate` entries keyed by site name. The default `href` is the online copy |
+| zarr v1.1.0 | every Item | `zarr:consolidated`, `zarr:zarr_format` |
+| datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 1139 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
+| cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |
+| processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR) only | |
+
+**Not used:**
+- **storage:** the design (`catalogue-stac.md` section 3) proposes `storage:schemes`/`storage:refs`, translated by
+  the helper into fsspec options. The prototype instead puts fsspec options in a custom `km_scale:storage_options`
+  field on the asset or alternate, and endpoint overrides (e.g. JASMIN's internal endpoint) in the site table
+  (`config/sites.yaml`).
+- **auth:** nothing yet; all HK25 online stores are public.
+- **dggs** (proposed extension): not used. `type: "healpix"` and the `healpix:*` fields proposed in the design stand
+  in for it. It is the natural replacement once settled, alongside the Zarr DGGS convention.
+
+**Custom `km_scale:*` fields:** `zoom`, `format`, `storage_options`, `sites`, `site_only`, `reachable`,
+`product_type`, `experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `references`,
+`license_text`, `feature`.
+
+keewis asked (Mattermost, 26 Nov 2026) which of alternate-assets, storage, auth, zarr, datacube and dggs this uses,
+and whether the catalogue is public. It is not: this repo has no remote and the build is not hosted.
+
 ## Results (2026-11-18)
 
 - **It works end to end.**
