@@ -158,7 +158,7 @@ function headHTML(n) {
   const t = n.extent?.temporal?.interval?.[0];
   const rows = [
     ["licence", n.license], ["providers", (n.providers || []).map(p => p.name).join(", ")],
-    ["period", t ? `${(t[0] || "?").slice(0, 10)} to ${(t[1] || "?").slice(0, 10)}` : ""],
+    ["period", t && (t[0] || t[1]) ? `${(t[0] || "?").slice(0, 10)} to ${(t[1] || "?").slice(0, 10)}` : "unknown"],
     ["experiments", (s["km_scale:experiment"] || []).join(", ")], ["domains", (s["km_scale:domain"] || []).join(", ")],
     ["contains", n.children.length ? n.children.map(c => c.type === "Collection" ? c.id : c.title).join(", ") : ""],
   ].filter(r => r[1]);
@@ -196,7 +196,7 @@ function card(e) {
   return `<li>
     <h3><a href="item.html#${encodeURIComponent(e.id)}" style="color:inherit;text-decoration:none">${esc(e.title)}</a></h3><div class="id">${esc(e.id)}</div>
     <div class="tags">${tags}${warn}</div>
-    <div class="note">${esc((e.start || "?").slice(0, 10))} to ${esc((e.end || "?").slice(0, 10))} · sites: ${esc(e.sites.join(", "))}
+    <div class="note">${e.start || e.end ? `${esc((e.start || "?").slice(0, 10))} to ${esc((e.end || "?").slice(0, 10))}${e.time_from_data ? " (from the data)" : ""}` : "time range unknown"} · sites: ${esc(e.sites.join(", "))}
       · licence: ${esc(lic)}</div>
     <div class="note">frequencies: ${esc(e.frequencies.join(", "))}${e.zooms.length ? ` · zooms ${Math.min(...e.zooms)}–${Math.max(...e.zooms)}` : ""}</div>
     <pre>${esc(snippet(e))}</pre>

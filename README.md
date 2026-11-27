@@ -104,7 +104,9 @@ From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set.
     `prod/v7/CTC_km4p4_CoMA9_TBv1.n2560_CoMA9_hier_v2/` under `CTC`.
   - Parameter combinations advertised but with no store: `icon_d3hp003aug` and `icon_d3hp003feb` (36 each),
     `scream-dkrz` (33), and some IFS. Intake's free parameters can't express "these combinations only".
-  - 27 datasets have no licence and 8 have no time range.
+  - 27 datasets have no licence and 8 have no time range. For 5 of the 8 the build takes the range from the stores'
+    time coordinates (`km_scale:time_from_data`); the other 3 are marked `km_scale:time_unknown` (Parquet tables, or
+    stores whose metadata couldn't be read).
   - 11 datasets' metadata time ranges don't match their stores' time coordinates (by more than a day). Seven are UM v5
     runs (e.g. `um_SEA_km4p4_RAL3P3_n1280_GAL9_nest`: the metadata ends 2021-02-26, the data runs to 2021-04-01); the
     others are `arp-gem-1p3km`, `casesm2_10km_nocumulus`, `icon_d3hp003aug` and `icon_d3hp003feb`.

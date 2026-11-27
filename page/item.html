@@ -153,7 +153,8 @@ function render(item, entry, tree, sites) {
     ["available at", esc((p["km_scale:sites"] || []).join(", "))],
   ].filter(r => r[1]);
 
-  const start = p.start_datetime || p.datetime, end = p.end_datetime || p.datetime;
+  const unknown = p["km_scale:time_unknown"];  // datetime is only a placeholder then
+  const start = unknown ? null : p.start_datetime || p.datetime, end = unknown ? null : p.end_datetime || p.datetime;
   const days = start && end ? Math.round((Date.parse(end) - Date.parse(start)) / 864e5) : null;
   const tbox = (k, v) => `<div class="box"><div class="k">${k}</div><div class="v">${v}</div></div>`;
   const freqTimes = freqs.map(f => {
@@ -188,7 +189,7 @@ function render(item, entry, tree, sites) {
     </div>
 
     <h2>Time</h2>
-    <div class="time">${tbox("start", esc(fmtDate(start)))}${tbox("end", esc(fmtDate(end)))}${days !== null ? tbox("length", `${days} days`) : ""}${freqTimes}</div>
+    <div class="time">${unknown ? tbox("time range", "unknown (not in the metadata, and not readable from the data)") : tbox("start", esc(fmtDate(start))) + tbox("end", esc(fmtDate(end)))}${p["km_scale:time_from_data"] ? tbox("source", "from the data (not in the metadata)") : ""}${days !== null ? tbox("length", `${days} days`) : ""}${freqTimes}</div>
     ${mismatchHTML}${bar}
 
     <h2>Data</h2>

@@ -368,7 +368,8 @@ def build(hk25_root, out, probe=True):
         if "online" not in per_node:
             props["km_scale:site_only"] = sorted(per_node)
         if not props["start_datetime"] or not props["end_datetime"]:
-            props["datetime"] = "2020-01-20T00:00:00Z"  # STAC needs a time; placeholder, flagged below
+            props["datetime"] = "2020-01-20T00:00:00Z"  # STAC needs a time; placeholder, replaced from the stores if it can be
+            props["km_scale:time_unknown"] = True
             props.pop("start_datetime"), props.pop("end_datetime")
             problems.append(f"{dsid}: no time_start/time_end in metadata; placeholder datetime")
         if not props["license"]:
@@ -436,6 +437,17 @@ def build(hk25_root, out, probe=True):
         for dsid, it in items.items():
             p_ = it["props"]
             if "start_datetime" not in p_:
+                # no range in the metadata: take it from the stores' own time coordinates, where they were read
+                ext = [d["extent"] for a in it["assets"].values() for d in a.get("cube:dimensions", {}).values()
+                       if d["type"] == "temporal" and d.get("extent")]
+                if ext:
+                    start, end = min(e[0] for e in ext), max(e[1] for e in ext)
+                    p_.update({"datetime": None, "start_datetime": start, "end_datetime": end,
+                               "km_scale:time_from_data": True})
+                    p_.pop("km_scale:time_unknown", None)
+                    old = f"{dsid}: no time_start/time_end in metadata; placeholder datetime"
+                    problems[problems.index(old)] = (f"{dsid}: no time_start/time_end in metadata; "
+                                                     f"range taken from the stores ({start} to {end})")
                 continue
             seen = set()
             for key, a in it["assets"].items():
@@ -510,7 +522,8 @@ def build(hk25_root, out, probe=True):
                 "product_type": p["km_scale:product_type"], "experiment": p.get("km_scale:experiment"),
                 "domain": p["km_scale:domain"], "source_id": p.get("km_scale:source_id"),
                 "resolution": p.get("km_scale:resolution"), "start": p.get("start_datetime"),
-                "end": p.get("end_datetime"), "license": p["license"], "license_text": p.get("km_scale:license_text"),
+                "end": p.get("end_datetime"), "time_from_data": p.get("km_scale:time_from_data", False),
+                "license": p["license"], "license_text": p.get("km_scale:license_text"),
                 "sites": p["km_scale:sites"], "site_only": p.get("km_scale:site_only"), "frequencies": freqs,
                 "zooms": zooms, "variables": variables, "description": (p.get("description") or "")[:600],
                 "item": str(ipath.relative_to(out)),
