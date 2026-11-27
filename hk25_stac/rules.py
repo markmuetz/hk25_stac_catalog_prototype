@@ -57,12 +57,15 @@ class DatasetContext:
             self.problems.add(self.draft.id, f"filled from store attributes: {', '.join(self.filled)}")
 
 
+DF_REQUIRED, DF_RECOMMENDED, CATALOGUE = "data-forge: required", "data-forge: recommended", "catalogue only"
+
+
 class Rule:
     """Read one field from a store's attributes."""
 
-    def __init__(self, field, preferred, alternates=(), target="", notes=""):
+    def __init__(self, field, preferred, alternates=(), target="", notes="", required_by=CATALOGUE):
         self.field, self.preferred, self.alternates = field, preferred, tuple(alternates)
-        self.target, self.notes = target, notes
+        self.target, self.notes, self.required_by = target, notes, required_by
 
     def keys(self):
         return tuple(k for k in (self.preferred, *self.alternates) if k)
@@ -86,7 +89,7 @@ class Rule:
     def doc_row(self):
         alts = ", ".join(f"`{a}`" for a in self.alternates) or "none"
         pref = f"`{self.preferred}`" if self.preferred else "none"
-        return [self.field, pref, alts, self.target, self.notes]
+        return [self.field, pref, alts, self.required_by, self.target, self.notes]
 
 
 class KeyRule(Rule):
@@ -158,7 +161,7 @@ class TimeCoverageRule(Rule):
             ctx.filled.append(f"start/end_datetime <- {self.START}/end")
 
     def doc_row(self):
-        return [self.field, f"`{self.START}`, `{self.END}`", "none", self.target, self.notes]
+        return [self.field, f"`{self.START}`, `{self.END}`", "none", self.required_by, self.target, self.notes]
 
 
 class BoundsRule(Rule):
@@ -205,23 +208,24 @@ class BoundsRule(Rule):
 
     def doc_row(self):
         return [self.field, "`geospatial_lat_min`, `geospatial_lat_max`, `geospatial_lon_min`, `geospatial_lon_max`",
-                ", ".join(f"`{a}`" for a in self.alternates), self.target, self.notes]
+                ", ".join(f"`{a}`" for a in self.alternates), self.required_by, self.target, self.notes]
 
 
 # --- asset rules: the store's structure ---------------------------------------------------------------------------
 class AssetRule:
     """Read something from one store's structure onto its asset."""
 
-    def __init__(self, field, preferred, alternates=(), target="", notes=""):
+    def __init__(self, field, preferred, alternates=(), target="", notes="", required_by=DF_REQUIRED):
         self.field, self.preferred, self.alternates = field, preferred, tuple(alternates)
-        self.target, self.notes = target, notes
+        self.target, self.notes, self.required_by = target, notes, required_by
 
     def apply(self, dsid, key, asset, meta, problems):
         raise NotImplementedError
 
     def doc_row(self):
         alts = ", ".join(f"`{a}`" for a in self.alternates) or "none"
-        return [self.field, f"`{self.preferred}`" if self.preferred else "none", alts, self.target, self.notes]
+        return [self.field, f"`{self.preferred}`" if self.preferred else "none", alts, self.required_by, self.target,
+                self.notes]
 
 
 class HealpixGridRule(AssetRule):
@@ -235,11 +239,24 @@ class HealpixGridRule(AssetRule):
             problems.add(dsid, f"{key} grid mapping says refinement level {hp[0]}, store name says zoom {zoom}")
 
 
-class DocOnlyRule(AssetRule):
-    """Documents an attribute the build doesn't read yet (so the table says what HK27 should require)."""
+class ReadElsewhere(AssetRule):
+    """A row for a key that another rule reads (the grid type, the indexing scheme): documents it, does nothing."""
 
     def apply(self, dsid, key, asset, meta, problems):
         pass
+
+
+class EllipsoidRule(AssetRule):
+    """The reference ellipsoid, as given; ``km_scale:spherical`` when a HEALPix store describes none."""
+
+    def apply(self, dsid, key, asset, meta, problems):
+        if meta.grid_mapping("healpix") is None:
+            return
+        ell = meta.ellipsoid()
+        if ell:
+            asset["km_scale:ellipsoid"] = ell
+        else:
+            asset["km_scale:spherical"] = True
 
 
 class CodecRule(AssetRule):
@@ -312,21 +329,22 @@ REGIONAL = KeyRule("Regional flag", None, ["regional"], "`km_scale:domain: regio
                    "longitudes (e.g. IMERG's 60°S–60°N band) stays global")
 
 DATASET_RULES = [
-    TitleRule("Title", "title", [], "Item `title`", "Only if the source's title is just the id"),
+    TitleRule("Title", "title", [], "Item `title`", "Only if the source's title is just the id", required_by=DF_RECOMMENDED),
     TimeCoverageRule(target="`start_datetime`, `end_datetime`",
                      notes="Only if the source has no range. Failing both, the build reads the time coordinate"),
     KeyRule("Description", "summary", ["description"], "`description`"),
     KeyRule("Creators", "creator_name", ["creator"], "`km_scale:creators`"),
-    KeyRule("References", "references", ["reference"], "`km_scale:references`", "DOIs in it are shown as links"),
-    KeyRule("Source", "source", [], "`km_scale:source`"),
+    KeyRule("References", "references", ["reference"], "`km_scale:references`", "DOIs in it are shown as links", required_by=DF_RECOMMENDED),
+    KeyRule("Source", "source", [], "`km_scale:source`", required_by=DF_RECOMMENDED),
     KeyRule("Acknowledgement", "acknowledgment", ["acknowledgement"], "`km_scale:acknowledgment`",
             "ACDD's spelling"),
     KeyRule("Version", "product_version", ["version", "processing_version"], "`km_scale:version`",
             "UM's `processing_version` may be a pipeline version rather than the dataset's"),
     KeyRule("Simulation name", "simulation", [], "`km_scale:simulation`", "Our own key (UM)"),
-    ProvidersRule("Producer", "institution", [], "`providers` (role `producer`)"),
+    ProvidersRule("Producer", "institution", [], "`providers` (role `producer`)", required_by=DF_RECOMMENDED),
     LicenseTextRule("Licence", "license", [], "`km_scale:license_text`",
-                    "Kept only when the Item's licence is `other`. Ideally an SPDX id such as `CC-BY-4.0`"),
+                    "Kept only when the Item's licence is `other`. Ideally an SPDX id such as `CC-BY-4.0`",
+                    required_by=DF_RECOMMENDED),
     DoiRule("DOI", "doi", ["DOI"], "`sci:doi` and a `cite-as` link", "Our own key; the bare DOI, not a URL"),
     DocumentationRule("Documentation", "documentation_url", ["Documentation", "documentation"], "an `about` link",
                       "Our own key"),
@@ -337,17 +355,23 @@ DATASET_RULES = [
 ]
 
 ASSET_RULES = [
-    DocOnlyRule("Grid type", "grid_mapping_name: healpix", [], "detects a HEALPix grid",
-                "On the grid-mapping (`crs`) variable"),
-    HealpixGridRule("Refinement level, indexing scheme", "refinement_level", ["healpix_nside"],
-                    "`healpix:refinement_level`, `healpix:indexing_scheme` on the asset",
-                    "Also `indexing_scheme: nested` (alternate `healpix_order: nest` or `nested`), normalised to "
-                    "`nested` or `ring`. The level is checked against the zoom in the store's name"),
-    DocOnlyRule("Ellipsoid", "reference_ellipsoid_name", ["earth_radius"], "not read yet",
-                "**Should be required for HK27**: its output is to be on the ellipsoidal HEALPix grid. "
-                "`earth_radius` for a sphere"),
+    ReadElsewhere("Grid type", "grid_mapping_name: healpix", [], "finds the grid mapping",
+                  "On a grid-mapping variable (e.g. a scalar `crs`)"),
+    HealpixGridRule("Refinement level", "refinement_level", ["healpix_level", "zoom", "healpix_nside"],
+                    "`healpix:refinement_level` on the asset",
+                    "Level from `healpix_nside` is log2(nside). Checked against the zoom in the store's name"),
+    ReadElsewhere("Indexing scheme", "indexing_scheme: nest", ["healpix_order: nest"],
+                  "`healpix:indexing_scheme` on the asset (read with the level)",
+                  "data-forge requires `nest`. The catalogue writes `nested` or `ring`, as xdggs does, and also reads "
+                  "`nested` (HK25 stores)"),
+    EllipsoidRule("Ellipsoid", "reference_ellipsoid_name",
+                  ["semi_major_axis + inverse_flattening", "semi_major_axis + semi_minor_axis"],
+                  "`km_scale:ellipsoid` on the asset, or `km_scale:spherical: true` if none is given",
+                  "HK27 output is on the ellipsoidal HEALPix grid; data-forge reports a spherical grid as an error "
+                  "unless run with `--allow-spherical`"),
     CodecRule("Extra software", None, [], "`km_scale:requires` on the asset",
-              "From the codecs the arrays use: `gribscan.rawgrib` (IFS stores referencing GRIB) needs gribscan"),
+              "From the codecs the arrays use: `gribscan.rawgrib` (IFS stores referencing GRIB) needs gribscan",
+              required_by=CATALOGUE),
 ]
 
 DATASET_CHECKS = [RegionalFootprint(), TimeFromData(), TimeConsistency()]
@@ -379,6 +403,6 @@ def metadata_tables():
         out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
         out += ["| " + " | ".join(c or "" for c in r) + " |" for r in rows]
         return "\n".join(out)
-    head = ["Field", "Preferred key", "Accepted alternates", "Goes to", "Notes"]
+    head = ["Field", "Preferred key", "Accepted alternates", "Required by", "Goes to", "Notes"]
     return ("### Dataset-level attributes\n\n" + table(head, [r.doc_row() for r in DATASET_RULES]) +
             "\n\n### Grid mapping and structure (per store)\n\n" + table(head, [r.doc_row() for r in ASSET_RULES]))

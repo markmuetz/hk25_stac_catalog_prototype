@@ -31,32 +31,33 @@ fails if they drift. Edit the rules, not the tables.
 <!-- generated from hk25_stac/rules.py: start -->
 ### Dataset-level attributes
 
-| Field | Preferred key | Accepted alternates | Goes to | Notes |
-|---|---|---|---|---|
-| Title | `title` | none | Item `title` | Only if the source's title is just the id |
-| Time range | `time_coverage_start`, `time_coverage_end` | none | `start_datetime`, `end_datetime` | Only if the source has no range. Failing both, the build reads the time coordinate |
-| Description | `summary` | `description` | `description` |  |
-| Creators | `creator_name` | `creator` | `km_scale:creators` |  |
-| References | `references` | `reference` | `km_scale:references` | DOIs in it are shown as links |
-| Source | `source` | none | `km_scale:source` |  |
-| Acknowledgement | `acknowledgment` | `acknowledgement` | `km_scale:acknowledgment` | ACDD's spelling |
-| Version | `product_version` | `version`, `processing_version` | `km_scale:version` | UM's `processing_version` may be a pipeline version rather than the dataset's |
-| Simulation name | `simulation` | none | `km_scale:simulation` | Our own key (UM) |
-| Producer | `institution` | none | `providers` (role `producer`) |  |
-| Licence | `license` | none | `km_scale:license_text` | Kept only when the Item's licence is `other`. Ideally an SPDX id such as `CC-BY-4.0` |
-| DOI | `doi` | `DOI` | `sci:doi` and a `cite-as` link | Our own key; the bare DOI, not a URL |
-| Documentation | `documentation_url` | `Documentation`, `documentation` | an `about` link | Our own key |
-| Footprint | `geospatial_lat_min`, `geospatial_lat_max`, `geospatial_lon_min`, `geospatial_lon_max` | `regional_bounds`, `bounds` | `bbox` and `geometry` | Alternates are a dict with `lower_left_lat`, `lower_left_lon`, `upper_right_lat`, `upper_right_lon`. Longitudes in 0–360 are converted to −180–180 |
-| Regional flag | none | `regional` | `km_scale:domain: regional` | Read by the footprint rule. Prefer deriving it from the footprint; a footprint covering all longitudes (e.g. IMERG's 60°S–60°N band) stays global |
+| Field | Preferred key | Accepted alternates | Required by | Goes to | Notes |
+|---|---|---|---|---|---|
+| Title | `title` | none | data-forge: recommended | Item `title` | Only if the source's title is just the id |
+| Time range | `time_coverage_start`, `time_coverage_end` | none | catalogue only | `start_datetime`, `end_datetime` | Only if the source has no range. Failing both, the build reads the time coordinate |
+| Description | `summary` | `description` | catalogue only | `description` |  |
+| Creators | `creator_name` | `creator` | catalogue only | `km_scale:creators` |  |
+| References | `references` | `reference` | data-forge: recommended | `km_scale:references` | DOIs in it are shown as links |
+| Source | `source` | none | data-forge: recommended | `km_scale:source` |  |
+| Acknowledgement | `acknowledgment` | `acknowledgement` | catalogue only | `km_scale:acknowledgment` | ACDD's spelling |
+| Version | `product_version` | `version`, `processing_version` | catalogue only | `km_scale:version` | UM's `processing_version` may be a pipeline version rather than the dataset's |
+| Simulation name | `simulation` | none | catalogue only | `km_scale:simulation` | Our own key (UM) |
+| Producer | `institution` | none | data-forge: recommended | `providers` (role `producer`) |  |
+| Licence | `license` | none | data-forge: recommended | `km_scale:license_text` | Kept only when the Item's licence is `other`. Ideally an SPDX id such as `CC-BY-4.0` |
+| DOI | `doi` | `DOI` | catalogue only | `sci:doi` and a `cite-as` link | Our own key; the bare DOI, not a URL |
+| Documentation | `documentation_url` | `Documentation`, `documentation` | catalogue only | an `about` link | Our own key |
+| Footprint | `geospatial_lat_min`, `geospatial_lat_max`, `geospatial_lon_min`, `geospatial_lon_max` | `regional_bounds`, `bounds` | catalogue only | `bbox` and `geometry` | Alternates are a dict with `lower_left_lat`, `lower_left_lon`, `upper_right_lat`, `upper_right_lon`. Longitudes in 0–360 are converted to −180–180 |
+| Regional flag | none | `regional` | catalogue only | `km_scale:domain: regional` | Read by the footprint rule. Prefer deriving it from the footprint; a footprint covering all longitudes (e.g. IMERG's 60°S–60°N band) stays global |
 
 ### Grid mapping and structure (per store)
 
-| Field | Preferred key | Accepted alternates | Goes to | Notes |
-|---|---|---|---|---|
-| Grid type | `grid_mapping_name: healpix` | none | detects a HEALPix grid | On the grid-mapping (`crs`) variable |
-| Refinement level, indexing scheme | `refinement_level` | `healpix_nside` | `healpix:refinement_level`, `healpix:indexing_scheme` on the asset | Also `indexing_scheme: nested` (alternate `healpix_order: nest` or `nested`), normalised to `nested` or `ring`. The level is checked against the zoom in the store's name |
-| Ellipsoid | `reference_ellipsoid_name` | `earth_radius` | not read yet | **Should be required for HK27**: its output is to be on the ellipsoidal HEALPix grid. `earth_radius` for a sphere |
-| Extra software | none | none | `km_scale:requires` on the asset | From the codecs the arrays use: `gribscan.rawgrib` (IFS stores referencing GRIB) needs gribscan |
+| Field | Preferred key | Accepted alternates | Required by | Goes to | Notes |
+|---|---|---|---|---|---|
+| Grid type | `grid_mapping_name: healpix` | none | data-forge: required | finds the grid mapping | On a grid-mapping variable (e.g. a scalar `crs`) |
+| Refinement level | `refinement_level` | `healpix_level`, `zoom`, `healpix_nside` | data-forge: required | `healpix:refinement_level` on the asset | Level from `healpix_nside` is log2(nside). Checked against the zoom in the store's name |
+| Indexing scheme | `indexing_scheme: nest` | `healpix_order: nest` | data-forge: required | `healpix:indexing_scheme` on the asset (read with the level) | data-forge requires `nest`. The catalogue writes `nested` or `ring`, as xdggs does, and also reads `nested` (HK25 stores) |
+| Ellipsoid | `reference_ellipsoid_name` | `semi_major_axis + inverse_flattening`, `semi_major_axis + semi_minor_axis` | data-forge: required | `km_scale:ellipsoid` on the asset, or `km_scale:spherical: true` if none is given | HK27 output is on the ellipsoidal HEALPix grid; data-forge reports a spherical grid as an error unless run with `--allow-spherical` |
+| Extra software | none | none | catalogue only | `km_scale:requires` on the asset | From the codecs the arrays use: `gribscan.rawgrib` (IFS stores referencing GRIB) needs gribscan |
 <!-- generated from hk25_stac/rules.py: end -->
 
 **Preferred where there are alternates:**
@@ -70,8 +71,15 @@ fails if they drift. Edit the rules, not the tables.
   it means, it may deserve a field of its own rather than being read as the dataset's version.
 - **DOI: `doi`**, the DOI on its own (`10.5067/...`), not a URL.
 
-`refinement_level` and `indexing_scheme` are what the newer UM stores already write. `healpix_nside` and
-`healpix_order` are accepted because every other store uses them.
+**Grid mapping: data-forge's names.** The grid rows follow data-forge's validator, which is what HK27 stores must
+pass: the level as `refinement_level` (or `healpix_level`, `zoom`, or `healpix_nside`), the indexing scheme as
+`nest` (in `indexing_scheme` or `healpix_order`), and an ellipsoid. HK25 stores mostly write `healpix_nside` and
+`healpix_order`. The newer UM stores write `indexing_scheme: nested`, which the catalogue reads but data-forge's
+validator rejects: HK27 stores should write `nest`. In the catalogue's own output the scheme is `nested` or `ring`,
+as in xdggs.
+
+The **Required by** column says whose rule it is: data-forge's validator (required or recommended), or only the
+catalogue's need, to be raised with data-forge.
 
 **Also read from the stores, before this draft:** variables, units, `standard_name`, `long_name`, `cell_methods`,
 dimensions, and the time and vertical coordinates (datacube and cf extensions).

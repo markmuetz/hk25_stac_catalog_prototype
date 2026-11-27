@@ -173,3 +173,32 @@ def test_zarr_v2_and_v3_metadata():
 def test_iso():
     assert iso("2020-01-20") == "2020-01-20T00:00:00Z"
     assert iso("2020-01-20 06:00") == "2020-01-20T06:00:00Z"
+
+
+# --- data-forge's grid-mapping names ---
+@pytest.mark.parametrize("gm", [{"healpix_level": 5, "healpix_order": "nest"}, {"zoom": 5, "indexing_scheme": "nest"},
+                                {"refinement_level": 5, "indexing_scheme": "nest"}])
+def test_data_forge_level_names(gm):
+    assert meta(gm).healpix() == (5, "nested")
+
+
+@pytest.mark.parametrize("gm, expected", [
+    ({"reference_ellipsoid_name": "WGS 84"}, {"km_scale:ellipsoid": {"reference_ellipsoid_name": "WGS 84"}}),
+    ({"semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563},
+     {"km_scale:ellipsoid": {"semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563}}),
+    ({"semi_major_axis": 6378137.0, "semi_minor_axis": 6356752.314},
+     {"km_scale:ellipsoid": {"semi_major_axis": 6378137.0, "semi_minor_axis": 6356752.314}}),
+    ({"earth_radius": 6371000.0}, {"km_scale:spherical": True}),
+    ({}, {"km_scale:spherical": True}),
+])
+def test_ellipsoid(gm, expected):
+    asset = {}
+    rules.apply_asset_rules("ds1", "k", asset, meta({"healpix_nside": 2, "healpix_order": "nest", **gm}), Problems())
+    got = {k: v for k, v in asset.items() if k in ("km_scale:ellipsoid", "km_scale:spherical")}
+    assert got == expected
+
+
+def test_no_grid_mapping_no_ellipsoid_flag():
+    asset = {}
+    rules.apply_asset_rules("ds1", "k", asset, meta(None), Problems())
+    assert "km_scale:spherical" not in asset

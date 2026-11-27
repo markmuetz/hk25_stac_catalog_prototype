@@ -49,20 +49,40 @@ class StoreMetadata:
         """Attributes of the first array whose grid_mapping_name is `name`, or None."""
         return next((a.attrs for a in self.arrays.values() if a.attrs.get("grid_mapping_name") == name), None)
 
+    # Attribute names on the grid mapping, as data-forge's validator (scripts/validate_healpix_zarr.py) accepts them
+    NSIDE_ATTRS = ("healpix_nside",)
+    LEVEL_ATTRS = ("refinement_level", "healpix_level", "zoom")
+    ORDER_ATTRS = ("healpix_order", "indexing_scheme")
+    ELLIPSOID_ATTR_SETS = (("semi_major_axis", "inverse_flattening"), ("semi_major_axis", "semi_minor_axis"),
+                           ("reference_ellipsoid_name",))
+
     def healpix(self):
         """(refinement_level, indexing_scheme) from a HEALPix grid mapping, normalised, or None.
 
-        Accepts refinement_level or healpix_nside, and indexing_scheme or healpix_order (nest/nested/ring).
+        The level is read from any of data-forge's level names, or from the nside. The scheme comes out as the
+        catalogue's own vocabulary, ``nested`` or ``ring`` (as in xdggs); data-forge requires the store to say ``nest``.
         """
         gm = self.grid_mapping("healpix")
         if gm is None:
             return None
-        level = gm.get("refinement_level")
-        if level is None and gm.get("healpix_nside") is not None:
-            level = int(round(math.log2(int(gm["healpix_nside"]))))
-        scheme = gm.get("indexing_scheme") or gm.get("healpix_order")
+        level = next((gm[k] for k in self.LEVEL_ATTRS if gm.get(k) is not None), None)
+        nside = next((gm[k] for k in self.NSIDE_ATTRS if gm.get(k) is not None), None)
+        if level is None and nside is not None:
+            level = int(round(math.log2(int(nside))))
+        scheme = next((gm[k] for k in self.ORDER_ATTRS if gm.get(k) is not None), None)
         scheme = {"nest": "nested", "nested": "nested", "ring": "ring"}.get(str(scheme).lower(), scheme)
         return (int(level) if level is not None else None), scheme
+
+    def ellipsoid(self):
+        """The reference ellipsoid from a HEALPix grid mapping: the first of data-forge's attribute sets present,
+        as a dict, or None if none is (the grid then looks spherical)."""
+        gm = self.grid_mapping("healpix")
+        if gm is None:
+            return None
+        for keys in self.ELLIPSOID_ATTR_SETS:
+            if all(gm.get(k) is not None for k in keys):
+                return {k: gm[k] for k in keys}
+        return None
 
 
 class Store:

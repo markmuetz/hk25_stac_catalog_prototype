@@ -130,7 +130,8 @@ From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, whic
 **Custom `km_scale:*` fields:** `zoom`, `format`, `storage_options`, `sites`, `site_only`, `reachable`,
 `product_type`, `experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `references`,
 `license_text`, `feature`, `time_from_data`, `time_unknown`, `source`, `acknowledgment`, `version`, `simulation`,
-`requires` (e.g. `["gribscan"]`), and `from_store` (which properties came from store attributes).
+`requires` (e.g. `["gribscan"]`), `ellipsoid` and `spherical` (on assets, from the grid mapping), and `from_store`
+(which properties came from store attributes).
 
 ## Results (2026-11-18)
 
