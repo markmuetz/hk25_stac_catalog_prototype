@@ -1,0 +1,50 @@
+name: Build and deploy the catalogue site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Nightly rebuild (re-reads every store, so drift shows up); off for now.
+  # schedule:
+  #   - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the HK25 Intake catalogue (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: digital-earths-global-hackathon/catalog
+          ref: d277f26
+          path: hk25
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Build the STAC catalogue and site
+        run: uv run build_catalog.py hk25 build
+      - name: Validate against the STAC schemas
+        run: uv run validate.py build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

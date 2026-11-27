@@ -27,3 +27,4 @@ def walk(obj):
 walk(root)
 print(dict(n), f"{len(errs)} invalid")
 for e in errs[:10]: print(*e)
+sys.exit(1 if errs else 0)

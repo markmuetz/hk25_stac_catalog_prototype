@@ -1,8 +1,14 @@
-# HK25 catalogue as STAC: an HK27 prototype
+# HK27 catalogue prototype: the HK25 catalogue as STAC
 
-An experiment for the HK27 catalogue design (`hk27_planning/notes/catalogue-stac.md`). It converts the public HK25
-Intake catalogue (https://github.com/digital-earths-global-hackathon/catalog) into a static STAC catalogue, using
-the model proposed for HK27:
+**Browse it:** https://markmuetz.github.io/hk27_catalog/
+
+**A draft for comment. Nothing here is set in stone.** This is one person's prototype for the catalogue of the 2027
+WCRP global km-scale hackathon (HK27), put together by Mark Muetzelfeldt with Claude (an AI assistant). It has not
+been agreed with the HK27 catalogue group, and any of it may change. Comments and objections are welcome as GitHub
+issues.
+
+It converts the public HK25 Intake catalogue (https://github.com/digital-earths-global-hackathon/catalog) into a
+static STAC catalogue, using the model proposed for HK27:
 
 - **one catalogue, no per-site catalogues.** The default `href` is the online copy; genuinely separate copies are
   alternate assets keyed by site;
@@ -34,7 +40,8 @@ the model proposed for HK27:
 ## Run
 
 ```sh
-uv run build_catalog.py ~/projects/external/hk25/catalog build      # ~20 s; reads ~930 online stores' metadata
+git clone https://github.com/digital-earths-global-hackathon/catalog hk25   # CI pins d277f26
+uv run build_catalog.py hk25 build                                   # ~20 s; reads ~930 online stores' metadata
 uv run validate.py build                                             # core + extension JSON schemas
 cd build && python3 -m http.server 8793 --bind 127.0.0.1             # then open http://127.0.0.1:8793/
 ```
@@ -68,8 +75,8 @@ From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set.
 | processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR) only | |
 
 **Not used:**
-- **storage:** the design (`catalogue-stac.md` section 3) proposes `storage:schemes`/`storage:refs`, translated by
-  the helper into fsspec options. The prototype instead puts fsspec options in a custom `km_scale:storage_options`
+- **storage:** the design proposes `storage:schemes`/`storage:refs`, translated by the helper into fsspec
+  options; not built yet. The prototype instead puts fsspec options in a custom `km_scale:storage_options`
   field on the asset or alternate, and endpoint overrides (e.g. JASMIN's internal endpoint) in the site table
   (`config/sites.yaml`).
 - **auth:** nothing yet; all HK25 online stores are public.
@@ -80,16 +87,13 @@ From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set.
 `product_type`, `experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `references`,
 `license_text`, `feature`.
 
-keewis asked (Mattermost, 26 Nov 2026) which of alternate-assets, storage, auth, zarr, datacube and dggs this uses,
-and whether the catalogue is public. It is not: this repo has no remote and the build is not hosted.
-
 ## Results (2026-11-18)
 
 - **It works end to end.**
   - 58 Items in 16 Collections, with 1139 assets (797 with datacube). All 86 Catalogs, Collections and Items
     validate against the core and extension schemas.
   - `index.json` is 76 kB.
-  - `km_scale.open_dataset` opened a UM store from the Mac.
+  - `km_scale.open_dataset` opened a UM store from a laptop.
   - `get_url()` gave the JASMIN-internal URL for UK, the filesystem path for NERSC, the online copy when a site
     lacks a zoom, and "only available at NCAR" for site-only data.
 - **The site table replaced every UK copy.** 486 assets of datasets held at both UK and online needed no UK
@@ -132,7 +136,7 @@ and whether the catalogue is public. It is not: this repo has no remote and the 
 - cf v1.0.0: `cf:cell_methods` must be an array, although the README shows a plain string.
 - Collection `summaries` can't contain empty lists.
 - An Item linked from a `by-experiment/` view is reached twice when walking the tree, so the validator has to
-  deduplicate by id (caveat 2 in the design doc, confirmed).
+  deduplicate by id (each Item has one `parent`, but views add more links to it).
 - `datetime: null` needs `start_datetime` and `end_datetime`. Items without a time range need a placeholder,
   flagged in `problems.txt`.
 
@@ -154,5 +158,11 @@ and whether the catalogue is public. It is not: this repo has no remote and the 
   needs a `license` link; 27 datasets have none.
 
 **Practical:**
-- Local port 8765 is taken on this Mac (an Epic Games HTTP server); the page is served on 8793.
+- The README serves the page on port 8793; any free port works.
 - The page needs HTTP (it fetches `index.json`), not `file://`.
+
+## Licence
+
+BSD 3-Clause (`LICENSE`). The catalogue metadata is generated from the HK25 Intake catalogue
+(https://github.com/digital-earths-global-hackathon/catalog, BSD 3-Clause, © 2025 digital-earths-global-hackathon)
+and from the data stores' own metadata. The datasets keep their own licences, as recorded on each Item.
