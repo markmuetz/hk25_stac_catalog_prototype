@@ -113,7 +113,7 @@ From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, whic
 |---|---|---|
 | alternate-assets v1.2.0 | every Item | Genuinely separate copies at other sites (NERSC path, Waterpark mirror, ...) are `alternate` entries keyed by site name. The default `href` is the online copy, or the local path at the one site holding data with no online copy (`km_scale:site_only`). Local paths are `file://` URIs: a bare `/path` would be resolved against the catalogue's own URL. `km_scale` and the pages strip the scheme |
 | zarr v1.1.0 | every Item | `zarr:consolidated`, `zarr:zarr_format` |
-| datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 1139 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
+| datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 989 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
 | cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |
 | processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR) only | |
 | scientific v1.0.0 | Items whose store gives a DOI (CERES) | `sci:doi`, plus a `cite-as` link |
@@ -134,6 +134,13 @@ From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, whic
 (which properties came from store attributes).
 
 ## Results (2026-11-18)
+
+**Since 27 Nov 2026, datasets whose stores are given by a glob are left out:** 13 HK25 datasets, all on node-local
+paths (MPAS DYAMOND1–3, the SCREAM runs, WRF CONUS and South America, EarthWorks, `nicam_gl11_latlon`, `tracking`).
+A glob is several stores, not one resource, so no STAC tool can open it. In HK27 each should be one store (pieces
+concatenated, or as groups), or a virtual store over the pieces. A glob copy at another site (IR_IMERG at NERSC) is
+left out the same way. Each is listed in `problems.txt`, and CI fails on any glob href. The catalogue is now 45 Items
+in 13 Collections, 989 assets. The figures below are from before.
 
 - **It works end to end.**
   - 58 Items in 16 Collections, with 1139 assets (797 with datacube). All 86 Catalogs, Collections and Items

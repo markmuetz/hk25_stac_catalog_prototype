@@ -25,8 +25,25 @@ def load_config():
 
 
 def collect(hk25_root, sites, vocab, problems):
-    """Stage 1: one ItemDraft per HK25 dataset, from the Intake metadata alone."""
-    return [ds.draft(sites, vocab, problems) for ds in Hk25Catalog(hk25_root).datasets()]
+    """Stage 1: one ItemDraft per HK25 dataset, from the Intake metadata alone.
+
+    Datasets whose stores are given by a glob (several stores under one pattern) are left out: a glob isn't one
+    resource, so no STAC tool can open it. In HK27 each should be one store (or a virtual store over the pieces).
+    """
+    drafts = []
+    for ds in Hk25Catalog(hk25_root).datasets():
+        d = ds.draft(sites, vocab, problems)
+        globs = [a["href"] for a in d.assets.values() if "*" in a["href"]]
+        if globs:
+            problems.add(d.id, f"excluded: {len(globs)} of {len(d.assets)} assets have a glob href (e.g. {globs[0]})")
+            continue
+        for key, a in d.assets.items():  # a glob copy at another site: leave that copy out
+            for site in [s for s, alt in a.get("alternate", {}).items() if "*" in alt["href"]]:
+                problems.add(d.id, f"{key}: copy at {site} left out (glob href {a['alternate'].pop(site)['href']})")
+            if a.get("alternate") == {}:
+                del a["alternate"]
+        drafts.append(d)
+    return drafts
 
 
 def probe(drafts, problems):

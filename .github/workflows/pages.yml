@@ -33,7 +33,7 @@ jobs:
         run: uv run --group dev pytest -q
       - name: Build the STAC catalogue and site
         run: uv run build_catalog.py hk25 build
-      - name: Check the built catalogue (e.g. no bare local paths)
+      - name: Check the built catalogue (no bare local paths, no glob hrefs)
         run: KM_SCALE_BUILD=build uv run --group dev pytest -q tests/test_build.py
       - name: Validate against the STAC schemas
         run: uv run validate.py build
