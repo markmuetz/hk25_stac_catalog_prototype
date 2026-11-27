@@ -154,7 +154,8 @@ class ZarrStore(Store):
                 if np.issubdtype(c.dtype, np.datetime64):
                     v = c.values[[0, -1]] if c.size > 1 else c.values
                     out[d] = [str(np.datetime_as_string(x, unit="s")) + "Z" for x in v]
-                elif c.size <= 1000 and np.issubdtype(c.dtype, np.number):
+                elif c.size <= 1000 and np.issubdtype(c.dtype, np.number) and np.isfinite(c.values).all():
+                    # non-finite values (e.g. ICON's NaN `crs` coordinate) aren't valid JSON: index range instead
                     # str(): float32 values without noise (0.05, not 0.05000000074505806)
                     out[d] = [float(str(x)) if np.issubdtype(c.dtype, np.floating) else int(x) for x in c.values]
             except Exception:

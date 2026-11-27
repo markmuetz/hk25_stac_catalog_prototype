@@ -55,6 +55,24 @@ uv run --group dev pytest -q                                         # unit test
 uv run build_catalog.py --metadata-doc                               # regenerate METADATA.md's key tables
 ```
 
+## Querying the whole catalogue: stac-geoparquet
+
+The build also writes every Item to one [stac-geoparquet](https://github.com/stac-utils/stac-geoparquet) file,
+`items.parquet` (~3 MB), one row per Item, so the catalogue can be queried with standard tools and no server:
+
+```python
+import duckdb
+duckdb.sql("""
+    select id, start_datetime, end_datetime
+    from 'https://markmuetz.github.io/hk25_stac_catalog_prototype/items.parquet'
+    where list_contains("km_scale:variables", 'pr') and list_contains("km_scale:frequencies", 'PT1H')
+""")
+```
+
+Two differences from the JSON Items, because Arrow makes a column per dictionary key: each asset's
+`cube:dimensions` and `cube:variables` are JSON text, and the Items gain flat `km_scale:variables`,
+`km_scale:frequencies` and `km_scale:zooms` lists for querying. Not yet checked: whether STAC Browser reads the file.
+
 ## Validation
 
 Store validation is [data-forge](https://github.com/km-scale/data-forge)'s job: its validator
