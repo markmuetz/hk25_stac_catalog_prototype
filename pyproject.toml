@@ -1,0 +1,19 @@
+[project]
+name = "hk25-stac-catalog-prototype"
+version = "0.1.0"
+description = "Static STAC catalogue built from the HK25 Intake catalogue: a prototype for the HK27 catalogue"
+requires-python = ">=3.12,<3.14"  # zarr's numcodecs didn't build under 3.14 when this was written
+dependencies = [
+    "pyyaml", "jinja2", "xarray", "zarr>=3", "fsspec", "aiohttp", "requests", "numpy",
+    "pystac[validation]>=1.16",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

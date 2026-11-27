@@ -51,7 +51,36 @@ git clone https://github.com/digital-earths-global-hackathon/catalog hk25   # CI
 uv run build_catalog.py hk25 build                                   # ~20 s; reads ~930 online stores' metadata
 uv run validate.py build                                             # core + extension JSON schemas
 cd build && python3 -m http.server 8793 --bind 127.0.0.1             # then open http://127.0.0.1:8793/
+uv run --group dev pytest -q                                         # unit tests (no network)
+uv run build_catalog.py --metadata-doc                               # regenerate METADATA.md's key tables
 ```
+
+## Code layout
+
+`build_catalog.py` is only the command line; the code is in `hk25_stac/`, in three stages (`pipeline.py`):
+
+1. **Collect** (`hk25.py`): `Hk25Catalog` walks the Intake catalogue's per-site YAML; `Hk25Dataset` merges one id
+   across sites; `Hk25Entry` renders one site's Jinja `urlpath`s for every parameter combination. Each dataset
+   becomes an `ItemDraft` (`model.py`). Everything HK25-specific, including the guesses for product type, model and
+   experiment, is in this module, so a store-driven HK27 source would replace only this.
+2. **Probe** (`stores.py`, `rules.py`): a `Store` per asset (`ZarrStore` reads the consolidated metadata JSON
+   directly, and coordinate values through xarray), then the **reading rules**. A `Rule` names a field, its
+   preferred key, the accepted alternates and where the value goes. `KeyRule` covers most fields; subclasses handle
+   those with logic (footprint, time range, DOI, title). `AssetRule`s read a store's structure (HEALPix grid mapping,
+   codecs), and `DatasetCheck`s compare the metadata with what the data showed. The rules also generate
+   [METADATA.md](METADATA.md)'s tables, so the documentation can't drift from the code.
+3. **Write** (`stac_out.py`, `site.py`): the STAC tree with [pystac](https://github.com/stac-utils/pystac), then
+   the search page's files. New kinds of store (kerchunk references, Parquet track tables) would be further `Store`
+   subclasses; new fields, further rules.
+
+**Links are relative, with no self links** (pystac's `SELF_CONTAINED`), so the same files work locally, on GitHub
+Pages, or copied anywhere. STAC recommends absolute self links for published catalogues. Switching (tried, not
+kept) takes, in `stac_out.write_stac`, `normalize_hrefs` with the site URL (`.../hk25_stac_catalog_prototype/stac`)
+and `save(catalog_type=CatalogType.ABSOLUTE_PUBLISHED, dest_href=stac_dir)`. Also `site.tree`, which follows child links
+on disk, would need to map the URL back to the local folder (a few lines). The pages and `km_scale` follow links as
+given, so they need no change.
+The `by-experiment/` views are written after pystac saves, as plain JSON: pystac would otherwise move or rewrite
+Items reached by two paths.
 
 `build/problems.txt` lists what the build found wrong with the source catalogue.
 
@@ -71,7 +100,7 @@ shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacu
 
 ## STAC extensions used (as of 2026-11-27)
 
-From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set. Collections declare none.
+From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, which sets each Item's `stac_extensions`. Collections declare none.
 
 | Extension | Where | How |
 |---|---|---|

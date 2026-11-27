@@ -29,6 +29,8 @@ jobs:
           ref: d277f26b0f221661615684022d2cf4a858b1c9df  # d277f26, 2026-09-17
           path: hk25
       - uses: astral-sh/setup-uv@v6
+      - name: Unit tests (rules, HK25 parsing, METADATA.md in sync with the rules)
+        run: uv run --group dev pytest -q
       - name: Build the STAC catalogue and site
         run: uv run build_catalog.py hk25 build
       - name: Validate against the STAC schemas

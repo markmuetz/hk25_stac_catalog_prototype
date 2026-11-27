@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pystac[validation]>=1.16"]
-# ///
 """Validate every Catalog, Collection and Item in build/stac against the core and extension JSON schemas."""
 import sys
 from collections import Counter
