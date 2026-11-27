@@ -92,12 +92,14 @@ function linkify(s) {
 }
 
 // the same copy choice as km_scale._choose
+const localPath = h => h.startsWith("file://") ? h.slice(7) : h;  // as km_scale.local_path
+
 function choose(item, asset, site, sites) {
   const alt = asset.alternate || {};
   const siteOnly = item.properties["km_scale:site_only"];
-  if (alt[site]) return {copy: site, href: alt[site].href};
+  if (alt[site]) return {copy: site, href: localPath(alt[site].href)};
   if (siteOnly && !siteOnly.includes(site)) return {copy: "unavailable", href: `only at ${siteOnly.join(", ")}`};
-  let copy = siteOnly ? siteOnly[0] : "online", href = asset.href;
+  let copy = siteOnly ? siteOnly[0] : "online", href = localPath(asset.href);
   if (copy === "online") {
     for (const [a, b] of Object.entries((sites[site] || {}).endpoint_overrides || {}))
       if (href.startsWith(a)) { href = b + href.slice(a.length); copy = `online via ${site} endpoint`; }

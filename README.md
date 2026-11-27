@@ -111,7 +111,7 @@ From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, whic
 
 | Extension | Where | How |
 |---|---|---|
-| alternate-assets v1.2.0 | every Item | Genuinely separate copies at other sites (NERSC path, Waterpark mirror, ...) are `alternate` entries keyed by site name. The default `href` is the online copy |
+| alternate-assets v1.2.0 | every Item | Genuinely separate copies at other sites (NERSC path, Waterpark mirror, ...) are `alternate` entries keyed by site name. The default `href` is the online copy, or the local path at the one site holding data with no online copy (`km_scale:site_only`). Local paths are `file://` URIs: a bare `/path` would be resolved against the catalogue's own URL. `km_scale` and the pages strip the scheme |
 | zarr v1.1.0 | every Item | `zarr:consolidated`, `zarr:zarr_format` |
 | datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 1139 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
 | cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |

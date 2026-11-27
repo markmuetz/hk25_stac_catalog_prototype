@@ -36,3 +36,15 @@ def test_site_override():
     sites = {"UK": {"endpoint_overrides": {"https://ext/": "http://int/"}}}
     assert apply_override("https://ext/a.zarr", "UK", sites) == "http://int/a.zarr"
     assert apply_override("https://other/a.zarr", "UK", sites) == "https://other/a.zarr"
+
+
+def test_local_paths_get_file_scheme():
+    from hk25_stac.util import to_href
+    assert to_href("/data2/share/a.zarr") == "file:///data2/share/a.zarr"
+    assert to_href("https://x/a.zarr") == "https://x/a.zarr"
+
+
+def test_km_scale_strips_file_scheme():
+    import km_scale
+    assert km_scale.local_path("file:///data2/a.zarr") == "/data2/a.zarr"
+    assert km_scale.local_path("https://x/a.zarr") == "https://x/a.zarr"

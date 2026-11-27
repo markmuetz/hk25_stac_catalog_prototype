@@ -69,6 +69,12 @@ def _asset(dsid, freq, zoom=None, asset=None):
     return it, key, it["assets"][key]
 
 
+def local_path(href):
+    """The catalogue writes local paths as file:// URIs (a bare path would be read relative to the catalogue's URL);
+    hand them to users and to xarray as plain paths."""
+    return href[len("file://"):] if href.startswith("file://") else href
+
+
 def _user_location(location):
     return location or os.environ.get("KM_SCALE_USER_LOCATION", ONLINE)
 
@@ -96,7 +102,7 @@ def _choose(dsid, freq=None, zoom=None, asset=None, location=None, source=None):
     else:
         copy, chosen = default_copy, a
 
-    href = chosen["href"]
+    href = local_path(chosen["href"])
     if copy == ONLINE:  # the user's site may reach the online copy by its own route (site table)
         for prefix, repl in (_sites().get(location) or {}).get("endpoint_overrides", {}).items():
             if href.startswith(prefix):

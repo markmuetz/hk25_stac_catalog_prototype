@@ -11,7 +11,7 @@ import jinja2
 import yaml
 
 from .model import ItemDraft
-from .util import PLACEHOLDER_DATETIME, bbox_geometry, bounds_to_bbox, iso, map_license
+from .util import PLACEHOLDER_DATETIME, bbox_geometry, bounds_to_bbox, iso, map_license, to_href
 
 # --- classification of HK25 ids (the HK25 catalogue has no product type or model field) -----------------------------
 MODEL_PREFIXES = [  # (prefix, Collection id, title)
@@ -166,7 +166,7 @@ class Hk25Dataset:
         assets = {}
         for key, (url, params) in default.urls_by_key.items():
             mt, fmt = media_type(url, first.driver)
-            a = {"href": url, "type": mt, "roles": ["data"], "title": key}
+            a = {"href": to_href(url), "type": mt, "roles": ["data"], "title": key}
             if fmt == "zarr" and first.consolidated is not None:
                 a["zarr:consolidated"] = bool(first.consolidated)
             if fmt != "zarr":
@@ -180,7 +180,7 @@ class Hk25Dataset:
                 site_url = e.urls_by_key[key][0]
                 if self.default_site == "online" and apply_override(url, site, sites_table) == site_url:
                     continue  # same objects through the site's own endpoint: covered by the site table
-                alt[site] = {"href": site_url}
+                alt[site] = {"href": to_href(site_url)}
             if alt:
                 a["alternate"] = alt
             assets[key] = a

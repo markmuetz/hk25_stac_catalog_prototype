@@ -84,3 +84,9 @@ def bbox_geometry(bb):
     if w <= e:
         return {"type": "Polygon", "coordinates": box(w, e)}
     return {"type": "MultiPolygon", "coordinates": [box(w, 180.0), box(-180.0, e)]}
+
+
+def to_href(path):
+    """A STAC href for a store path. A bare absolute path would be read as relative to the catalogue's own URL
+    (``/data2/x.zarr`` -> ``https://<site>/data2/x.zarr``), so local paths get the ``file://`` scheme."""
+    return "file://" + path if path.startswith("/") else path
