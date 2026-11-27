@@ -77,8 +77,8 @@
 <body>
 <h1>HK25 catalogue as STAC: search prototype</h1>
 <p class="lead">Generated from the HK25 Intake catalogue as an experiment for HK27. Everything here is static: a flat
-<code>index.json</code> built by CI from the STAC Items, filtered in the browser. The STAC tree is at
-<a href="stac/catalog.json">stac/catalog.json</a>. Experiment, domain and product type are <em>inferred</em> from HK25
+<code>index.json</code> built by CI from the STAC Items, filtered in the browser. Browse the whole
+<a href="stac.html">STAC tree</a> (from <a href="stac/catalog.json">stac/catalog.json</a>). Experiment, domain and product type are <em>inferred</em> from HK25
 ids and metadata.</p>
 
 <div class="layout">
@@ -165,7 +165,7 @@ function headHTML(n) {
   return `<div class="head"><div class="kind">${esc(n.type)} · ${esc(n.path)}</div><h2>${esc(n.title)}</h2>
     ${n.description ? `<div class="note">${esc(n.description)}</div>` : ""}
     <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-    <div class="links"><a href="${esc(n.href)}">STAC ${esc(n.type)} JSON</a></div></div>`;
+    <div class="links"><a href="stac.html#${esc(n.href)}">In the STAC tree</a><a href="${esc(n.href)}">STAC ${esc(n.type)} JSON</a></div></div>`;
 }
 
 function filtered(skipVar = false) {
