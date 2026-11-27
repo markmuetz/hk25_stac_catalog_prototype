@@ -2,8 +2,14 @@
 
 **A draft for comment, not an agreed standard.** This lists the attributes in a data store (Zarr global attributes, and
 the grid-mapping variable) that the catalogue build reads, which name each should preferably use, and which other
-names are accepted for now. It is meant as a starting point for HK27's list of required attributes, so that producers
-can write what the catalogue needs and the catalogue can be generated from the stores rather than typed in.
+names are accepted for now.
+
+**Validation belongs to [data-forge](https://github.com/km-scale/data-forge), and this catalogue builds on top of it.**
+data-forge's validator (`scripts/validate_healpix_zarr.py`) is the gate every HK27 store passes, and it sets which
+attributes are required or recommended. This file is not a second set of rules. It is the catalogue's reading list:
+what the build reads, so the catalogue can be generated from the stores rather than typed in. Where the catalogue
+needs something the validator doesn't yet require (e.g. `summary`, a regional footprint, experiment and model keys),
+the aim is to ask for it to be added there.
 
 Preferred names follow [ACDD 1.3](https://wiki.esipfed.org/Attribute_Convention_for_Data_Discovery_1-3) and
 [CF](https://cfconventions.org/) where they have a name. Where neither does, the preferred name is our own choice, noted as "Our own key".

@@ -55,6 +55,13 @@ uv run --group dev pytest -q                                         # unit test
 uv run build_catalog.py --metadata-doc                               # regenerate METADATA.md's key tables
 ```
 
+## Validation
+
+Store validation is [data-forge](https://github.com/km-scale/data-forge)'s job: its validator
+(`scripts/validate_healpix_zarr.py`) decides which store attributes are required. This catalogue builds on top of it
+and keeps no rules of its own for the stores. `validate.py` here checks only the STAC output. [METADATA.md](METADATA.md)
+lists what the catalogue reads from the stores.
+
 ## Code layout
 
 `build_catalog.py` is only the command line; the code is in `hk25_stac/`, in three stages (`pipeline.py`):
