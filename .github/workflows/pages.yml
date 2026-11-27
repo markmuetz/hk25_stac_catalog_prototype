@@ -21,14 +21,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check out the HK25 Intake catalogue (pinned)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: digital-earths-global-hackathon/catalog
-          ref: d277f26
+          ref: d277f26b0f221661615684022d2cf4a858b1c9df  # d277f26, 2026-09-17
           path: hk25
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
       - name: Build the STAC catalogue and site
         run: uv run build_catalog.py hk25 build
