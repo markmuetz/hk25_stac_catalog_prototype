@@ -1,6 +1,6 @@
-# HK27 catalogue prototype: the HK25 catalogue as STAC
+# HK25 catalogue as STAC: a prototype for the HK27 catalogue
 
-**Browse it:** https://markmuetz.github.io/hk27_catalog/
+**Browse it:** https://markmuetz.github.io/hk25_stac_catalog_prototype/
 
 **A draft for comment. Nothing here is set in stone.** This is one person's prototype for the catalogue of the 2027
 WCRP global km-scale hackathon (HK27), put together by Mark Muetzelfeldt with Claude (an AI assistant). It has not
