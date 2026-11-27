@@ -161,5 +161,7 @@ walk(ROOT).then(() => {
   select(h ? new URL(h, PAGE).href : ROOT);
 }).catch(e => { $("tree").textContent = `Could not walk the catalogue: ${e.message}`; });
 </script>
+<footer style="margin-top: 2em; font-size: .85em; opacity: .8">Source code, and issues for comments:
+<a href="https://github.com/markmuetz/hk25_stac_catalog_prototype">github.com/markmuetz/hk25_stac_catalog_prototype</a></footer>
 </body>
 </html>

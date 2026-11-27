@@ -79,7 +79,7 @@
 <p class="lead">Generated from the HK25 Intake catalogue as an experiment for HK27. Everything here is static: a flat
 <code>index.json</code> built by CI from the STAC Items, filtered in the browser. Browse the whole
 <a href="stac.html">STAC tree</a> (from <a href="stac/catalog.json">stac/catalog.json</a>). Experiment, domain and product type are <em>inferred</em> from HK25
-ids and metadata.</p>
+ids and metadata. The code is on <a href="https://github.com/markmuetz/hk25_stac_catalog_prototype">GitHub</a>.</p>
 
 <div class="layout">
 <nav class="tree" id="tree"><h2>Catalogue</h2></nav>
@@ -254,5 +254,7 @@ $("tree").addEventListener("click", ev => {
   else if (a) { sel = a.dataset.path === sel && sel !== "." ? "." : a.dataset.path; render(); }
 });
 </script>
+<footer style="margin-top: 2em; font-size: .85em; opacity: .8">Source code, and issues for comments:
+<a href="https://github.com/markmuetz/hk25_stac_catalog_prototype">github.com/markmuetz/hk25_stac_catalog_prototype</a></footer>
 </body>
 </html>
