@@ -142,15 +142,22 @@ function render(item, entry, tree, sites) {
   const tags = [p["km_scale:product_type"], item.collection, p["km_scale:experiment"] && (p["km_scale:experiment"] + (p["km_scale:experiment_inferred"] ? " (inferred)" : "")),
     p["km_scale:domain"], p["km_scale:resolution"]].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join("");
   const warns = [p["km_scale:site_only"] && `only at ${p["km_scale:site_only"].join(", ")}`,
-    unreachable && `${unreachable} asset(s) not reachable`].filter(Boolean).map(t => `<span class="warn">${esc(t)}</span>`).join("");
+    unreachable && `${unreachable} asset(s) not reachable`,
+    Object.values(item.assets).some(a => (a["km_scale:requires"] || []).includes("gribscan")) && "needs gribscan to open"].filter(Boolean).map(t => `<span class="warn">${esc(t)}</span>`).join("");
 
   const meta = [
     ["licence", p.license === "other" ? (p["km_scale:license_text"] ? esc(p["km_scale:license_text"]) : "not stated") : esc(p.license)],
     ["providers", esc((p.providers || []).map(x => `${x.name} (${(x.roles || []).join(", ")})`).join("; "))],
     ["creators", esc(p["km_scale:creators"])],
     ["references", p["km_scale:references"] ? linkify(p["km_scale:references"]) : ""],
+    ["DOI", p["sci:doi"] ? `<a href="https://doi.org/${esc(p["sci:doi"])}">${esc(p["sci:doi"])}</a>` : ""],
+    ["source", p["km_scale:source"] ? linkify(p["km_scale:source"]) : ""],
+    ["acknowledgment", esc(p["km_scale:acknowledgment"])],
+    ["version", esc(p["km_scale:version"])],
+    ["simulation", esc(p["km_scale:simulation"])],
     ["source id", esc(p["km_scale:source_id"])],
     ["available at", esc((p["km_scale:sites"] || []).join(", "))],
+    ["from the store", p["km_scale:from_store"] ? `<span class="note">${esc(p["km_scale:from_store"].join("; "))}</span>` : ""],
   ].filter(r => r[1]);
 
   const unknown = p["km_scale:time_unknown"];  // datetime is only a placeholder then
@@ -197,7 +204,7 @@ function render(item, entry, tree, sites) {
     <div id="fbody"></div>
 
     <h2>Links</h2>
-    <div class="links"><a href="${esc(entry.item)}">STAC Item JSON</a>${trail.length ? `<a href="${esc(trail[trail.length - 1].href)}">Collection JSON</a>` : ""}${entry.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(entry.gridlook)}">View in gridlook</a>` : ""}</div>`;
+    <div class="links"><a href="stac.html#${esc(entry.item)}">In the STAC tree</a><a href="${esc(entry.item)}">STAC Item JSON</a>${trail.length ? `<a href="${esc(trail[trail.length - 1].href)}">Collection JSON</a>` : ""}${entry.gridlook ? `<a href="https://gridlook.pages.dev/#${esc(entry.gridlook)}">View in gridlook</a>` : ""}${(item.links || []).filter(l => ["about", "cite-as"].includes(l.rel)).map(l => `<a href="${esc(l.href)}">${esc(l.title || (l.rel === "cite-as" ? "Cite (DOI)" : l.rel))}</a>`).join("")}</div>`;
 
   drawMap(item);
   let cur = freqs.find(f => f.startsWith("PT1H")) || freqs[0];
@@ -244,6 +251,8 @@ function freqBody(item, group, f, sites) {
       <div>
         <table>
           <tr><th>format</th><td>${esc(fmt)}${a0["zarr:zarr_format"] ? ` (Zarr v${a0["zarr:zarr_format"]}${a0["zarr:consolidated"] ? ", consolidated" : ""})` : ""}</td></tr>
+          ${a0["healpix:indexing_scheme"] ? `<tr><th>grid</th><td>HEALPix, ${esc(a0["healpix:indexing_scheme"])} (from the store)</td></tr>` : ""}
+          ${(a0["km_scale:requires"] || []).length ? `<tr><th>needs</th><td>${esc(a0["km_scale:requires"].join(", "))} installed (GRIB-referencing store)</td></tr>` : ""}
           <tr><th>zoom levels</th><td>${zooms.length ? `${zooms[0]}–${zooms[zooms.length - 1]} (${zooms.length} stores)` : "–"}</td></tr>
           ${zooms.length ? `<tr><th>cells</th><td>${(12 * 4 ** zooms[0]).toLocaleString()} (z${zooms[0]}) to ${(12 * 4 ** zooms[zooms.length - 1]).toLocaleString()} (z${zooms[zooms.length - 1]})</td></tr>` : ""}
           <tr><th>variables</th><td>${vars.length ? vars.filter(([, v]) => v.type === "data").length : "not read (store not online)"}</td></tr>

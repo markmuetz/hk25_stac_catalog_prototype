@@ -37,6 +37,7 @@ EXT = {
     "alternate": "https://stac-extensions.github.io/alternate-assets/v1.2.0/schema.json",
     "zarr": "https://stac-extensions.github.io/zarr/v1.1.0/schema.json",
     "processing": "https://stac-extensions.github.io/processing/v1.3.0/schema.json",
+    "scientific": "https://stac-extensions.github.io/scientific/v1.0.0/schema.json",
 }
 GLOBAL_BBOX = [-180.0, -90.0, 180.0, 90.0]
 BRANCH_DESCRIPTIONS = {
@@ -96,7 +97,7 @@ def infer_experiment(dsid, meta):
 
 
 def infer_domain(dsid, meta):
-    if meta.get("region", "global") not in ("global", None) or any(h in dsid for h in REGIONAL_HINTS):
+    if str(meta.get("region", "global")).lower() not in ("global", "glm", "none") or any(h in dsid for h in REGIONAL_HINTS):
         return "regional"
     return "global"
 
@@ -175,7 +176,7 @@ def fetch_json(url, timeout=20):
 
 
 def read_zmeta(url):
-    """Return (zarr_format, {array_name: (attrs, shape, dtype, dims)}) or None if unreachable."""
+    """Return (zarr_format, {array_name: (attrs, shape, dtype, dims)}, store attrs, codec ids) or None if unreachable."""
     url = url.rstrip("/")
     zm = fetch_json(url + "/.zmetadata")
     if zm is not None:
@@ -188,7 +189,9 @@ def read_zmeta(url):
                     continue
                 attrs = meta.get(f"{name}/.zattrs", {})
                 arrays[name] = (attrs, v.get("shape", []), v.get("dtype"), attrs.get("_ARRAY_DIMENSIONS", []))
-        return 2, arrays, meta.get(".zattrs", {})
+        codecs = {c["id"] for k, v in meta.items() if k.endswith("/.zarray")
+                  for c in [v.get("compressor"), *(v.get("filters") or [])] if isinstance(c, dict) and "id" in c}
+        return 2, arrays, meta.get(".zattrs", {}), codecs
     zj = fetch_json(url + "/zarr.json")
     if zj is not None:
         arrays = {}
@@ -196,7 +199,9 @@ def read_zmeta(url):
             if v.get("node_type") == "array" and "/" not in name:
                 arrays[name] = (v.get("attributes", {}), v.get("shape", []), v.get("data_type"),
                                 v.get("dimension_names") or [])
-        return 3, arrays, zj.get("attributes", {})
+        codecs = {c.get("name") for v in (zj.get("consolidated_metadata") or {}).get("metadata", {}).values()
+                  for c in v.get("codecs") or [] if isinstance(c, dict)} - {None}
+        return 3, arrays, zj.get("attributes", {}), codecs
     return None
 
 
@@ -231,9 +236,92 @@ def read_coords(url, dims):
     return out
 
 
+# --- store attributes -> catalogue fields (first draft of the chosen keys: see METADATA.md) -------------------------
+# field: (preferred key, accepted alternates). Names follow ACDD 1.3 and CF where they have one.
+STORE_KEYS = {
+    "title":       ("title", []),
+    "summary":     ("summary", ["description"]),
+    "institution": ("institution", []),
+    "creator":     ("creator_name", ["creator"]),
+    "source":      ("source", []),
+    "references":  ("references", ["reference"]),
+    "acknowledgment": ("acknowledgment", ["acknowledgement"]),
+    "doi":         ("doi", ["DOI"]),
+    "documentation": ("documentation_url", ["Documentation", "documentation"]),
+    "version":     ("product_version", ["version", "processing_version"]),
+    "license":     ("license", []),
+    "simulation":  ("simulation", []),
+    "regional":    ("regional", []),
+    "bounds":      ("geospatial_lat_min/max, geospatial_lon_min/max", ["regional_bounds", "bounds"]),  # ACDD form first
+    "time_start":  ("time_coverage_start", []),
+    "time_end":    ("time_coverage_end", []),
+}
+STORE_BOUNDS_ACDD = ("geospatial_lat_min", "geospatial_lat_max", "geospatial_lon_min", "geospatial_lon_max")
+PLACEHOLDERS = {"", "UNSET", "unset", "none", "None", "Created by xios", "NICAM data output"}
+
+
+def store_fields(attrs):
+    """Pick the chosen keys from a store's attributes. Returns ({field: value}, {field: key actually used})."""
+    out, used = {}, {}
+    if all(attrs.get(k) is not None for k in STORE_BOUNDS_ACDD):
+        out["bounds"] = {"lower_left_lat": attrs["geospatial_lat_min"], "upper_right_lat": attrs["geospatial_lat_max"],
+                         "lower_left_lon": attrs["geospatial_lon_min"], "upper_right_lon": attrs["geospatial_lon_max"]}
+        used["bounds"] = STORE_KEYS["bounds"][0]
+    for field, (pref, alts) in STORE_KEYS.items():
+        if field in out:
+            continue
+        for k in (pref, *alts):
+            v = attrs.get(k)
+            if v is not None and str(v).strip() not in PLACEHOLDERS:
+                out[field], used[field] = v, k
+                break
+    return out, used
+
+
+def truthy(v):
+    return v is True or str(v).strip().lower() in ("true", "1", "yes")
+
+
+def bounds_to_bbox(b):
+    """{'lower_left_lat', 'lower_left_lon', 'upper_right_lat', 'upper_right_lon'} (any lon convention) -> STAC bbox."""
+    import ast
+    if isinstance(b, str):
+        b = ast.literal_eval(b)
+    s, n = float(b["lower_left_lat"]), float(b["upper_right_lat"])
+    w, e = float(b["lower_left_lon"]), float(b["upper_right_lon"])
+    span = (e - w) % 360
+    if e - w >= 359 or span >= 359 or (span == 0 and e != w):
+        return [-180.0, round(s, 4), 180.0, round(n, 4)]  # full longitude band (e.g. a tropical channel)
+    wrap = lambda x: round(((x + 180) % 360) - 180, 4)
+    return [wrap(w), round(s, 4), wrap(e), round(n, 4)]   # west > east means it crosses the antimeridian (allowed)
+
+
+def bbox_geometry(bb):
+    w, s, e, n = bb
+    box = lambda a, b: [[[a, s], [b, s], [b, n], [a, n], [a, s]]]
+    if w <= e:
+        return {"type": "Polygon", "coordinates": box(w, e)}
+    return {"type": "MultiPolygon", "coordinates": [box(w, 180.0), box(-180.0, e)]}
+
+
+def healpix_crs(arrays):
+    """HEALPix grid-mapping attributes from a store, normalised: (refinement_level, indexing_scheme) or None."""
+    import math
+    for attrs, *_ in arrays.values():
+        if attrs.get("grid_mapping_name") != "healpix":
+            continue
+        level = attrs.get("refinement_level")
+        if level is None and attrs.get("healpix_nside") is not None:
+            level = int(round(math.log2(int(attrs["healpix_nside"]))))
+        scheme = attrs.get("indexing_scheme") or attrs.get("healpix_order")
+        scheme = {"nest": "nested", "nested": "nested", "ring": "ring"}.get(str(scheme).lower(), scheme)
+        return (int(level) if level is not None else None), scheme
+    return None
+
+
 def datacube(zmeta, zoom, freq, meta, coords=None):
     coords = coords or {}
-    fmt, arrays, _ = zmeta
+    fmt, arrays = zmeta[0], zmeta[1]
     dim_sizes, dims = {}, {}
     for name, (attrs, shape, dtype, adims) in arrays.items():
         for d, n in zip(adims, shape):
@@ -250,8 +338,12 @@ def datacube(zmeta, zoom, freq, meta, coords=None):
             if freq and re.fullmatch(r"P(T\d+[HM]|\d+[DM])", str(freq)):
                 o["step"] = freq
         elif zoom is not None and n == 12 * 4 ** int(zoom):
+            hp = healpix_crs(arrays)
+            level, scheme = hp if hp else (int(zoom), None)
+            src = "from the store's grid mapping" if hp else "assumed: no healpix grid mapping in the store"
             o = {"type": "healpix", "extent": [0, n - 1], "count": n,
-                 "description": f"HEALPix nested, refinement level {zoom} (HK25: spherical)"}
+                 "description": f"HEALPix {scheme or 'nested'}, refinement level {level} ({src}; "
+                                f"HK25 stores record no ellipsoid)"}
         elif d.lower() in VERTICAL_NAMES or sn in ("air_pressure", "height", "depth", "model_level_number"):
             o = {"type": "spatial", "axis": "z", "count": n}
         else:
@@ -380,9 +472,9 @@ def build(hk25_root, out, probe=True):
         lon = [meta.get("geospatial_lon_min"), meta.get("geospatial_lon_max")]
         lat = [meta.get("geospatial_lat_min"), meta.get("geospatial_lat_max")]
         if domain_regional and None not in lon + lat:
-            bbox = [float(lon[0]), float(lat[0]), float(lon[1]), float(lat[1])]
-            geom = {"type": "Polygon", "coordinates": [[[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]],
-                                                       [bbox[0], bbox[3]], [bbox[0], bbox[1]]]]}
+            bbox = bounds_to_bbox({"lower_left_lat": lat[0], "upper_right_lat": lat[1],
+                                   "lower_left_lon": lon[0], "upper_right_lon": lon[1]})
+            geom = bbox_geometry(bbox)
         else:
             bbox, geom = GLOBAL_BBOX, GLOBAL_GEOM
         items[dsid] = {"branch": branch, "coll": coll, "coll_title": coll_title, "props": props, "assets": assets,
@@ -429,6 +521,81 @@ def build(hk25_root, out, probe=True):
             dims, variables = datacube(zm, a.get("km_scale:zoom"), freq, items[dsid]["meta"],
                                        coords.get((dsid, key.split(".")[0])))
             a["cube:dimensions"], a["cube:variables"] = dims, variables
+            hp = healpix_crs(zm[1])
+            if hp:
+                a["healpix:refinement_level"], a["healpix:indexing_scheme"] = hp
+                if a.get("km_scale:zoom") is not None and hp[0] is not None and hp[0] != a["km_scale:zoom"]:
+                    problems.append(f"{dsid}: {key} grid mapping says refinement level {hp[0]}, "
+                                    f"store name says zoom {a['km_scale:zoom']}")
+            if "gribscan.rawgrib" in zm[3]:
+                a["km_scale:requires"] = ["gribscan"]  # references GRIB messages: xr.open_zarr needs gribscan installed
+
+        # store attributes: fill what the Intake metadata lacks, and record the keys used (see METADATA.md)
+        store_attrs = defaultdict(dict)
+        for (dsid, key), zm in sorted(res.items(), key=lambda kv: items[kv[0][0]]["assets"][kv[0][1]].get("km_scale:zoom", 0)):
+            if zm is not None:
+                for k, v in zm[2].items():
+                    store_attrs[dsid].setdefault(k, v)
+        for dsid, attrs in store_attrs.items():
+            it, (f, used) = items[dsid], store_fields(attrs)
+            p_, filled = it["props"], []
+            def fill(prop, value, field):
+                if value and not p_.get(prop):
+                    p_[prop] = value
+                    filled.append(f"{prop} <- {used[field]}")
+            if p_.get("title") == dsid:
+                fill("title", f.get("title"), "title")
+            if "start_datetime" not in p_ and f.get("time_start") and f.get("time_end"):
+                p_.update({"datetime": None, "start_datetime": iso(f["time_start"]), "end_datetime": iso(f["time_end"])})
+                p_.pop("km_scale:time_unknown", None)
+                filled.append("start/end_datetime <- time_coverage_start/end")
+            fill("description", f.get("summary"), "summary")
+            fill("km_scale:creators", f.get("creator"), "creator")
+            fill("km_scale:references", f.get("references"), "references")
+            fill("km_scale:source", f.get("source"), "source")
+            fill("km_scale:acknowledgment", f.get("acknowledgment"), "acknowledgment")
+            fill("km_scale:version", f.get("version"), "version")
+            fill("km_scale:simulation", f.get("simulation"), "simulation")
+            if f.get("institution") and not p_.get("providers"):
+                p_["providers"] = [{"name": f["institution"], "roles": ["producer"]}]
+                filled.append(f"providers <- {used['institution']}")
+            if f.get("license") and p_.get("license") == "other" and not p_.get("km_scale:license_text"):
+                p_["km_scale:license_text"] = str(f["license"])
+                filled.append(f"km_scale:license_text <- {used['license']}")
+            if f.get("doi"):
+                doi = re.sub(r"^(doi:|https?://(dx\.)?doi\.org/)", "", str(f["doi"]).strip(), flags=re.I)
+                p_["sci:doi"] = doi
+                it.setdefault("links", []).append({"rel": "cite-as", "href": f"https://doi.org/{doi}"})
+                filled.append(f"sci:doi <- {used['doi']}")
+            if f.get("documentation"):
+                it.setdefault("links", []).append({"rel": "about", "href": str(f["documentation"]),
+                                                   "title": "Dataset documentation", "type": "text/html"})
+                filled.append(f"about link <- {used['documentation']}")
+            # footprint and domain
+            if f.get("bounds"):
+                try:
+                    bb = bounds_to_bbox(f["bounds"])
+                    it["bbox"], it["geometry"] = bb, bbox_geometry(bb)
+                    filled.append(f"bbox <- {used['bounds']}")
+                    full_lon = bb[0] == -180.0 and bb[2] == 180.0
+                    if truthy(f.get("regional")) and not full_lon and p_["km_scale:domain"] != "regional":
+                        p_["km_scale:domain"] = "regional"
+                        filled.append("km_scale:domain <- regional")
+                except (KeyError, ValueError, SyntaxError) as e:
+                    problems.append(f"{dsid}: could not read bounds from {used['bounds']}: {e}")
+            elif truthy(f.get("regional")) and p_["km_scale:domain"] != "regional":
+                problems.append(f"{dsid}: store says regional but gives no bounds")
+            alt = [f"{fld}: {k} (preferred {STORE_KEYS[fld][0]})" for fld, k in used.items()
+                   if k != STORE_KEYS[fld][0] and fld in STORE_KEYS]
+            if alt:
+                problems.append(f"{dsid}: store uses alternate attribute names: {'; '.join(alt)}")
+            if filled:
+                p_["km_scale:from_store"] = filled
+                problems.append(f"{dsid}: filled from store attributes: {', '.join(filled)}")
+
+        for dsid, it in items.items():
+            if it["props"]["km_scale:domain"] == "regional" and it["bbox"] == GLOBAL_BBOX:
+                problems.append(f"{dsid}: regional, but no bounds in the metadata or the store; footprint left global")
 
         # metadata time range vs the stores' own time coordinates (HK25's fail-on-mismatch rule, applied to contents)
         from datetime import datetime
@@ -504,6 +671,9 @@ def build(hk25_root, out, probe=True):
             if it["props"]["license"] == "other" and it["props"].get("km_scale:license_text"):
                 ilinks.append({"rel": "license", "href": "https://digital-earths-global-hackathon.github.io/catalog/",
                                "title": it["props"]["km_scale:license_text"][:200]})
+            ilinks += it.get("links", [])
+            if "sci:doi" in it["props"]:
+                stac_ext.append(EXT["scientific"])
             if it["props"]["km_scale:product_type"] == "derived":
                 stac_ext.append(EXT["processing"])
                 it["props"]["processing:software"] = {it["coll"]: "unknown"}
@@ -609,6 +779,7 @@ def build(hk25_root, out, probe=True):
     (out / "problems.txt").write_text("\n".join(problems) + "\n")
     shutil.copy(HERE / "page/index.html", out / "index.html")
     shutil.copy(HERE / "page/item.html", out / "item.html")
+    shutil.copy(HERE / "page/stac.html", out / "stac.html")
     shutil.copy(HERE / "km_scale.py", out / "km_scale.py")
     n_assets = sum(len(it["assets"]) for it in items.values())
     n_cube = sum("cube:variables" in a for it in items.values() for a in it["assets"].values())

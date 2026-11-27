@@ -27,6 +27,13 @@ static STAC catalogue, using the model proposed for HK27:
   A tree of the catalogue hierarchy on the left, generated from the STAC links into `tree.json`, is the filter for
   product type and Collection. Its counts follow the other filters; `+n?` marks datasets whose variables couldn't be
   read. Selecting a Catalog or Collection shows its shared properties (licence, providers, period, summaries).
+- **the whole STAC tree** (`stac.html`): every Catalog, Collection and Item, walked from `stac/catalog.json` by its
+  links, with the first two levels open. Selecting a node shows its JSON in a collapsible viewer, also open to two
+  levels; links to other STAC files in the JSON select that node.
+- **store attributes as metadata:** where the Intake metadata is missing something, the build fills it from the
+  stores' own attributes: description, creators, source, references, DOI, documentation link, version, regional
+  footprint, and the HEALPix grid mapping. Which keys, their preferred names and the accepted alternates are in
+  [METADATA.md](METADATA.md), a first draft for HK27's required attributes.
 - **a page per Item** (`item.html#<id>`), like STAC Browser's, linked from each card in place of raw JSON:
   - breadcrumbs from the tree, the description (with basic markdown), licence, providers, creators, references;
   - a map of the footprint (Leaflet + OSM tiles);
@@ -62,7 +69,7 @@ HK25 has one store per zoom, so assets here are keyed `<freq>.z<zoom>` (e.g. `PT
 HK27 stores will hold zoom groups, so assets would be keyed `<freq>` and list their refinement levels. That also
 shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacube.
 
-## STAC extensions used (as of 2026-11-26)
+## STAC extensions used (as of 2026-11-27)
 
 From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set. Collections declare none.
 
@@ -73,6 +80,7 @@ From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set.
 | datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 1139 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
 | cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |
 | processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR) only | |
+| scientific v1.0.0 | Items whose store gives a DOI (CERES) | `sci:doi`, plus a `cite-as` link |
 
 **Not used:**
 - **storage:** the design proposes `storage:schemes`/`storage:refs`, translated by the helper into fsspec
@@ -80,12 +88,13 @@ From `EXT` in `build_catalog.py` and where each Item's `stac_extensions` is set.
   field on the asset or alternate, and endpoint overrides (e.g. JASMIN's internal endpoint) in the site table
   (`config/sites.yaml`).
 - **auth:** nothing yet; all HK25 online stores are public.
-- **dggs** (proposed extension): not used. `type: "healpix"` and the `healpix:*` fields proposed in the design stand
-  in for it. It is the natural replacement once settled, alongside the Zarr DGGS convention.
+- **dggs** (proposed extension): not used. `type: "healpix"` and the `healpix:refinement_level` and
+  `healpix:indexing_scheme` asset fields (read from the store's grid mapping) stand in for it. It is the natural replacement once settled, alongside the Zarr DGGS convention.
 
 **Custom `km_scale:*` fields:** `zoom`, `format`, `storage_options`, `sites`, `site_only`, `reachable`,
 `product_type`, `experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `references`,
-`license_text`, `feature`.
+`license_text`, `feature`, `time_from_data`, `time_unknown`, `source`, `acknowledgment`, `version`, `simulation`,
+`requires` (e.g. `["gribscan"]`), and `from_store` (which properties came from store attributes).
 
 ## Results (2026-11-18)
 
