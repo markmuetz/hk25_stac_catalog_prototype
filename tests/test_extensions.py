@@ -28,6 +28,16 @@ def test_references(text, pubs, about):
                                                                      for p in pubs or [] if "doi" in p]
 
 
+def test_hk25_citation_is_a_publication():
+    from hk25_stac.hk25 import publications
+    pubs, links = publications({"references": "https://www.icon-model.org/",
+                                "citation": "Takasuka, D., et al. A protocol. PEPS 11, 66 (2024). "
+                                            "https://doi.org/10.1186/s40645-024-00668-1"})
+    assert pubs == [{"citation": "Takasuka, D., et al. A protocol. PEPS 11, 66 (2024). "
+                                 "https://doi.org/10.1186/s40645-024-00668-1", "doi": "10.1186/s40645-024-00668-1"}]
+    assert [link["rel"] for link in links] == ["about", "describedby"]
+
+
 def draft(assets=None, **props):
     p = {"title": "ds1", "license": "CC-BY-4.0", "km_scale:domain": "global", "km_scale:product_type": "simulation",
          "datetime": "2020-01-20T00:00:00Z", **props}
@@ -36,10 +46,10 @@ def draft(assets=None, **props):
 
 def test_references_and_versions_from_store_attributes():
     d = draft()
-    rules.apply_dataset_rules(d, {"references": "https://doi.org/10.1002/qj.4781", "citation": "Cite me.",
+    rules.apply_dataset_rules(d, {"references": "https://doi.org/10.1002/qj.4781",
                                   "product_version": "v2", "processing_version": "1.3"}, Problems())
     p = d.props
-    assert p["sci:publications"] == [{"doi": "10.1002/qj.4781"}] and p["sci:citation"] == "Cite me."
+    assert p["sci:publications"] == [{"doi": "10.1002/qj.4781"}]
     assert p["version"] == "v2" and p["processing:version"] == "1.3"
     assert {"rel": "describedby", "href": "https://doi.org/10.1002/qj.4781", "title": "Publication",
             "type": "text/html"} in d.links

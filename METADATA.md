@@ -38,7 +38,6 @@ fails if they drift. Edit the rules, not the tables.
 | Description | `summary` | `description` | catalogue only | `description` |  |
 | Creators | `creator_name` | `creator` | catalogue only | `km_scale:creators` |  |
 | References | `references` | `reference` | data-forge: recommended | `sci:publications`, and `about` links | A list of URLs gives one publication per DOI and an `about` link per other URL; other text is one citation |
-| Citation | `citation` | none | catalogue only | `sci:citation` | How to cite the data (ACDD has no such key; CF-style) |
 | Source | `source` | none | data-forge: recommended | `km_scale:source` |  |
 | Acknowledgement | `acknowledgment` | `acknowledgement` | catalogue only | `km_scale:acknowledgment` | ACDD's spelling |
 | Version | `product_version` | `version` | catalogue only | `version` | The version extension's field |

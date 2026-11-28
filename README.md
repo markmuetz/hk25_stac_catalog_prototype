@@ -185,7 +185,7 @@ the field names it actually uses. Collections declare only dggs (for their level
 | projection v2.0.0 | HEALPix assets whose store states an ellipsoid | `proj:code: EPSG:4326` for WGS 84, or `proj:projjson` built from the ellipsoid axes, as the DGGS extension asks for the figure of the Earth. No HK25 store states one, so none is written yet |
 | cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |
 | processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR); UM Items | `processing:software`; `processing:version` from the UM's `processing_version` (the HEALPix pipeline's version, not the dataset's) |
-| scientific v1.0.0 | Items with a DOI, references or a citation | `sci:doi` plus a `cite-as` link; `sci:publications` from the references (one per DOI, with a `describedby` link; other URLs become `about` links; free text is one citation); `sci:citation` from a `citation` attribute (none in HK25) |
+| scientific v1.0.0 | Items with a DOI, references or a citation | `sci:doi` plus a `cite-as` link; `sci:publications` from the references (one per DOI, with a `describedby` link; other URLs become `about` links; free text is one citation); HK25's `citation` field also goes to `sci:publications`: it names papers (model descriptions, the DYAMOND3 protocol), not how to cite the data. `sci:citation` ("how to cite the data") is left for HK27, which needs a data-citation attribute in its conventions |
 | version v1.2.0 | Items whose store states a version (CERES) | `version`, from `product_version` or `version` |
 
 **Not used:**

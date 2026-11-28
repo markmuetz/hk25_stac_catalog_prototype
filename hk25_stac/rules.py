@@ -392,7 +392,6 @@ DATASET_RULES = [
     ReferencesRule("References", "references", ["reference"], "`sci:publications`, and `about` links",
                    "A list of URLs gives one publication per DOI and an `about` link per other URL; other text is one "
                    "citation", required_by=DF_RECOMMENDED),
-    KeyRule("Citation", "citation", [], "`sci:citation`", "How to cite the data (ACDD has no such key; CF-style)"),
     KeyRule("Source", "source", [], "`km_scale:source`", required_by=DF_RECOMMENDED),
     KeyRule("Acknowledgement", "acknowledgment", ["acknowledgement"], "`km_scale:acknowledgment`",
             "ACDD's spelling"),

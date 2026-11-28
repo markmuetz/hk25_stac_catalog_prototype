@@ -149,6 +149,17 @@ class Hk25Entry:
         return d
 
 
+def publications(meta):
+    """HK25's ``references`` and ``citation`` -> (sci:publications, links). HK25's ``citation`` names papers (the
+    model's description, the DYAMOND3 protocol), not how to cite the data, so it is a publication, not sci:citation."""
+    pubs, links = [], []
+    for key in ("references", "citation"):
+        p, ls = references(meta.get(key))
+        pubs += [x for x in p or [] if x not in pubs]
+        links += [link for link in ls if link not in links]
+    return pubs or None, links
+
+
 class Hk25Dataset:
     """One dataset id across every site that lists it."""
 
@@ -219,8 +230,7 @@ class Hk25Dataset:
             "km_scale:resolution": meta.get("resolution"),
             "km_scale:sites": self.sites,
             "km_scale:creators": meta.get("creator_name"),
-            "sci:citation": meta.get("citation"),
-            "sci:publications": references(meta.get("references"))[0],
+            "sci:publications": publications(meta)[0],
             "km_scale:license_text": meta.get("license") if map_license(meta.get("license")) == "other" else None,
             **extra,
         }
@@ -236,7 +246,7 @@ class Hk25Dataset:
             problems.add(self.id, "no licence in metadata")
         props = {k: v for k, v in props.items() if v is not None}
         draft = ItemDraft(self.id, branch, coll, coll_title, props, assets, meta)
-        draft.links += references(meta.get("references"))[1]
+        draft.links += publications(meta)[1]
         lon = [meta.get("geospatial_lon_min"), meta.get("geospatial_lon_max")]
         lat = [meta.get("geospatial_lat_min"), meta.get("geospatial_lat_max")]
         if props["km_scale:domain"] == "regional" and None not in lon + lat:
