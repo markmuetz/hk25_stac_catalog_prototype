@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .geoparquet import write_geoparquet
+from .geoparquet import write_assets_table, write_geoparquet
 
 HERE = Path(__file__).resolve().parent.parent
 PAGES = ["index.html", "item.html", "stac.html"]
@@ -62,6 +62,7 @@ def write_site(drafts, item_paths, out, sites, problems, usage):
     (out / "problems.txt").write_text("\n".join(problems.lines()) + "\n")
     (out / "attribute_usage.json").write_text(json.dumps(usage, indent=1, sort_keys=True))
     write_geoparquet(item_paths.values(), out / "items.parquet")
+    write_assets_table(item_paths.values(), out / "assets.parquet")
     for page in PAGES:
         shutil.copy(HERE / "page" / page, out / page)
     shutil.copy(HERE / "km_scale.py", out / "km_scale.py")

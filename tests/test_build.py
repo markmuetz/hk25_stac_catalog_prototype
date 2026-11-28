@@ -46,6 +46,18 @@ def test_geoparquet_has_every_item_and_queries():
 
 
 @pytest.mark.skipif(not BUILD, reason="no build directory given (KM_SCALE_BUILD)")
+def test_assets_table_has_every_asset():
+    import duckdb
+    items = [json.loads(f.read_text()) for f in Path(BUILD, "stac").rglob("*.json") if "by-experiment" not in f.parts]
+    n_assets = sum(len(d["assets"]) for d in items if d.get("type") == "Feature")
+    pq = str(Path(BUILD, "assets.parquet"))
+    assert duckdb.sql(f"select count(*) from '{pq}'").fetchall()[0][0] == n_assets
+    # every key with a frequency in it parses to one
+    bad = duckdb.sql(f"select asset from '{pq}' where frequency is null and regexp_matches(asset, 'PT?[0-9]')")
+    assert not bad.fetchall()
+
+
+@pytest.mark.skipif(not BUILD, reason="no build directory given (KM_SCALE_BUILD)")
 def test_strict_json():
     """No NaN or Infinity: they aren't JSON, and browsers' JSON.parse rejects them."""
     def reject(c):

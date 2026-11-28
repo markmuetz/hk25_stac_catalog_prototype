@@ -69,7 +69,21 @@ duckdb.sql("""
 """)
 ```
 
-Two differences from the JSON Items, because Arrow makes a column per dictionary key: each asset's
+**`assets.parquet`** (our own table, not a STAC convention) has one row per asset: dataset, frequency, zoom. HK25's
+asset keys mix several things into the "frequency" (`PT1H_inst`, `3D_PT1H`, `P1D_part2`, `data`, `static`), so they
+are split into `frequency`, `time_method`, `levels` and `part`. Where the key has no frequency (`data`), it is
+inferred from the time axis and `frequency_inferred` is set (ERA5, JRA3Q, MERRA2 and CERES come out monthly, IMERG
+half-hourly). Each row also has the variables, vertical dimensions, time range and steps, href and the sites with
+copies, so "which stores have hourly pr" is one filter:
+
+```python
+duckdb.sql("""
+    select id, max(zoom) from 'https://markmuetz.github.io/hk25_stac_catalog_prototype/assets.parquet'
+    where frequency = 'PT1H' and list_contains(variables, 'pr') group by id
+""")
+```
+
+In `items.parquet`, two differences from the JSON Items, because Arrow makes a column per dictionary key: each asset's
 `cube:dimensions` and `cube:variables` are JSON text, and the Items gain flat `km_scale:variables`,
 `km_scale:frequencies` and `km_scale:zooms` lists for querying. Not yet checked: whether STAC Browser reads the file.
 
@@ -77,7 +91,8 @@ Two differences from the JSON Items, because Arrow makes a column per dictionary
 
 `km_scale_mcp.py` lets an AI agent (Claude Code, an IDE assistant, OpenCode with a local model) search the catalogue
 and get code to open a dataset at the user's site. It is read-only and runs locally over stdio: it loads
-`items.parquet` into an in-memory DuckDB table, and uses `km_scale` to choose the copy. No server of ours.
+`items.parquet` and `assets.parquet` into in-memory DuckDB tables, and uses `km_scale` to choose the copy. No server
+of ours.
 
 ```sh
 claude mcp add km-scale -e KM_SCALE_USER_LOCATION=UK -- \
@@ -87,11 +102,12 @@ claude mcp add km-scale -e KM_SCALE_USER_LOCATION=UK -- \
 | Tool | Does |
 |---|---|
 | `catalog_overview` | The vocabulary: experiments, product types, domains, frequencies, zooms, sites, common variables |
-| `search_datasets` | Filter by variables, frequency, zoom, experiment, product type, domain, model, text, a point, a period, a site |
-| `find_variable` | Map a quantity ("precipitation") to variable names, with units and the datasets that have them |
+| `search_datasets` | Filter by variables, frequency, zoom (all in one store), experiment, product type, domain, model, text, a point, a period, a site |
+| `find_assets` | Find stores by variables, frequency, time method, levels, zoom; finest zoom by default |
+| `find_variable` | Map a quantity ("precipitation") to variable names, with each dataset's unit and frequencies |
 | `describe_dataset` | One dataset: description, time, footprint, licence, citation links, assets and copies, variables |
 | `how_to_open` | Which copy to read from the user's site, its URL, Python code, and what every other site would read |
-| `query_catalog` | Read-only SQL on the `items` table, for anything else. DuckDB can't read files or URLs from it |
+| `query_catalog` | Read-only SQL on the `items` and `assets` tables, for anything else, with worked examples in its description. DuckDB can't read files or URLs from it |
 
 Each tool call is appended to `~/.km_scale/mcp_log.jsonl` (tool, arguments, result count, error, time taken). It
 stays on the user's machine; `KM_SCALE_MCP_LOG=off` turns it off. `KM_SCALE_CATALOG` points the server at another

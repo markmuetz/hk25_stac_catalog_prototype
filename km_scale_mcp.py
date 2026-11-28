@@ -1,6 +1,7 @@
 """Prototype MCP server for the km-scale catalogue: search, describe and "how do I open this here".
 
-Reads the catalogue's stac-geoparquet file (items.parquet) into an in-memory DuckDB table, and uses km_scale for the
+Reads the catalogue's stac-geoparquet file (items.parquet, one row per dataset) and its asset table (assets.parquet,
+one row per dataset, frequency and zoom) into in-memory DuckDB tables, and uses km_scale for the
 choice of copy by location. Read-only; no server of ours: run it locally over stdio.
 
     uv run --group mcp python km_scale_mcp.py          # stdio, for an MCP client
@@ -42,8 +43,9 @@ Frequencies are ISO 8601 durations (PT15M, PT1H, PT3H, PT6H, P1D, P1M). Zoom is 
 (0 coarsest, ~1.6 km at z12; each step halves the cell size). Variable names are mostly CMIP-style (pr, tas, rlut,
 ua); use find_variable to map a quantity ("precipitation") to names.
 
-Typical flow: catalog_overview (vocabulary) -> find_variable / search_datasets -> describe_dataset -> how_to_open.
-For anything the other tools don't cover, query_catalog runs read-only SQL on the whole catalogue.
+Typical flow: catalog_overview (vocabulary) -> find_variable -> search_datasets (which datasets) or find_assets
+(which stores: frequency, time method, levels, zoom, variables) -> describe_dataset -> how_to_open.
+For anything the other tools don't cover, query_catalog runs read-only SQL on tables `items` and `assets`.
 """
 
 mcp = MCPServer("km-scale-catalog", instructions=INSTRUCTIONS)
@@ -76,6 +78,7 @@ def logged(fn):
 def db():
     con = duckdb.connect()
     con.execute(f"create table items as select * exclude (geometry) from '{CATALOG}/items.parquet'")
+    con.execute(f"create table assets as select * from '{CATALOG}/assets.parquet'")
     con.execute("set global lambda_syntax = 'ENABLE_SINGLE_ARROW'")  # models write x -> f(x); DuckDB 2 wants lambda x: f(x)
     con.execute("set enable_external_access = false")  # query_catalog can't read files or URLs
     con.execute("set lock_configuration = true")
@@ -117,6 +120,7 @@ def assets_of(dsid):
 def variable_table():
     """{variable: {dataset id: {unit, standard_name, long_name, frequencies}}} over the whole catalogue."""
     table = defaultdict(dict)
+    freq = {(i, k): f or k.split(".")[0] for i, k, f in db().execute("select id, asset, frequency from assets").fetchall()}
     for (dsid,) in db().execute("select id from items").fetchall():
         for key, a in assets_of(dsid).items():
             for v, c in a.get("cube:variables", {}).items():
@@ -124,15 +128,23 @@ def variable_table():
                     continue
                 e = table[v].setdefault(dsid, {"unit": c.get("unit"), "standard_name": c.get("cf:standard_name"),
                                                 "long_name": c.get("description"), "frequencies": set()})
-                e["frequencies"].add(key.split(".")[0])
+                e["frequencies"].add(freq[(dsid, key)])
     return table
+
+
+@functools.cache
+def frequencies():
+    """{dataset id: its frequencies}, from the asset table (HK25 keys such as PT1H_inst count as PT1H)."""
+    return {i: f for i, f in db().execute(
+        "select id, list_sort(list_distinct(list(frequency))) from assets where frequency is not null group by id")
+        .fetchall()}
 
 
 def summary(r):
     return {"id": r["id"], "title": r["title"], "type": r["km_scale:product_type"], "domain": r["km_scale:domain"],
             "experiment": r["km_scale:experiment"], "source_id": r["km_scale:source_id"],
             "time": [str(r["start_datetime"] or r["datetime"])[:10], str(r["end_datetime"] or "")[:10]],
-            "frequencies": r["km_scale:frequencies"], "zooms": r["km_scale:zooms"], "sites": r["km_scale:sites"]}
+            "frequencies": frequencies().get(r["id"], []), "zooms": r["km_scale:zooms"], "sites": r["km_scale:sites"]}
 
 
 # --- tools ---
@@ -140,15 +152,16 @@ def summary(r):
 @logged
 def catalog_overview() -> dict:
     """The catalogue's vocabulary and size: experiments, product types, domains, frequencies, zooms, sites, and the
-    most common variables. Call this first to learn the valid values for search_datasets."""
-    def counts(col, unnest=False):
+    most common variables (counts are numbers of datasets). Call this first to learn the valid values."""
+    def counts(col, unnest=False, table="items"):
         expr = f'unnest("{col}")' if unnest else f'"{col}"'
         return {str(k): n for k, n in db().execute(
-            f"select {expr} as v, count(*) n from items group by v order by n desc").fetchall()}
+            f"select {expr} as v, count(distinct id) n from {table} group by v order by n desc").fetchall()}
     vt = variable_table()
     return {"n": rows("select count(*) n from items")[0]["n"], "catalogue": CATALOG,
             "experiments": counts("km_scale:experiment"), "product_types": counts("km_scale:product_type"),
-            "domains": counts("km_scale:domain"), "frequencies": counts("km_scale:frequencies", True),
+            "domains": counts("km_scale:domain"), "frequencies": counts("frequency", table="assets"),
+            "time_methods": counts("time_method", table="assets"), "levels": counts("levels", table="assets"),
             "zooms": counts("km_scale:zooms", True), "sites": counts("km_scale:sites", True),
             "common_variables": dict(sorted(((v, len(d)) for v, d in vt.items()), key=lambda x: -x[1])[:40]),
             "n_variables": len(vt)}
@@ -163,22 +176,19 @@ def search_datasets(variables: list[str] | None = None, frequency: str | None = 
                     site: str | None = None, limit: int = 50) -> list[dict]:
     """Find datasets. All filters are optional and combine with AND.
 
-    variables: every listed variable must be present (names as in find_variable, e.g. ["pr", "tas"]).
-    frequency: e.g. "PT1H"; also matches variants such as "PT1H_inst", "PT1H_mean" and "3D_PT1H"; zoom: HEALPix level; experiment, product_type ("simulation", "reanalysis",
+    variables, frequency, zoom: one store must have them all, e.g. variables=["pr", "tas"], frequency="PT1H" finds
+    datasets with hourly pr and tas, not pr hourly and tas daily (names as in find_variable; frequency an ISO 8601
+    duration, or "fixed"; zoom a HEALPix level). experiment, product_type ("simulation", "reanalysis",
     "observation", "derived"), domain ("global" or "regional"), source_id (model): exact values from
     catalog_overview. text: case-insensitive match in id, title or description. lon/lat: the dataset's footprint
     must cover this point (degrees, lon in -180..180). start/end (YYYY-MM-DD): the dataset must overlap this period.
     site: a copy must exist at this site (e.g. "UK", "EU", "NERSC")."""
     where, p = [], []
-    for v in variables or []:
-        where.append('list_contains("km_scale:variables", ?)'); p.append(v)
-    if frequency:  # HK25 keys add a suffix or prefix: PT1H_inst, PT6H_mean, 3D_PT1H, P1D_part2
-        where.append("""len(list_filter("km_scale:frequencies",
-                     lambda f: f = ? or f like ? escape '!' or f like ? escape '!')) > 0""")
-        p += [frequency, frequency + "!_%", "%!_" + frequency]
-    for col, val in (("km_scale:zooms", zoom), ("km_scale:sites", site)):
-        if val is not None:
-            where.append(f'list_contains("{col}", ?)'); p.append(val)
+    if variables or frequency or zoom is not None:  # all in one store: use the asset table
+        aw, ap = asset_filters(variables=variables, frequency=frequency, zoom=zoom)
+        where.append("id in (select id from assets where " + " and ".join(aw) + ")"); p += ap
+    if site is not None:
+        where.append('list_contains("km_scale:sites", ?)'); p.append(site)
     for col, val in (("km_scale:experiment", experiment), ("km_scale:product_type", product_type),
                      ("km_scale:domain", domain), ("km_scale:source_id", source_id)):
         if val is not None:
@@ -197,12 +207,54 @@ def search_datasets(variables: list[str] | None = None, frequency: str | None = 
     return [summary(r) for r in rows(sql, p + [limit])]
 
 
+def asset_filters(variables=None, frequency=None, zoom=None, time_method=None, levels=None, dataset_id=None):
+    where, p = [], []
+    if variables:
+        where.append("list_has_all(variables, ?)"); p.append(list(variables))
+    for col, val in (("frequency", frequency), ("zoom", zoom), ("time_method", time_method), ("levels", levels),
+                     ("id", dataset_id)):
+        if val is not None:
+            where.append(f"{col} = ?"); p.append(val)
+    return where or ["true"], p
+
+
+@mcp.tool()
+@logged
+def find_assets(variables: list[str] | None = None, frequency: str | None = None, zoom: int | None = None,
+                time_method: str | None = None, levels: str | None = None, dataset_id: str | None = None,
+                product_type: str | None = None, experiment: str | None = None, domain: str | None = None,
+                finest_only: bool = True, limit: int = 100) -> list[dict]:
+    """Find stores (assets): one per dataset, frequency and zoom. Filters combine with AND; one store must have all
+    the listed variables.
+
+    frequency: ISO 8601 duration (PT15M, PT30M, PT1H, PT3H, PT6H, P1D, P1M) or "fixed"; time_method: "inst" or
+    "mean" (null when the store doesn't say); levels: "2D" or "3D" (null when not split). finest_only: keep only
+    the finest zoom per dataset, frequency, time method and levels (set false to list every zoom). Each row gives
+    the asset key (pass it to how_to_open), variables, time range and steps, and which sites hold copies.
+    frequency_inferred means the frequency was worked out from the time axis, not given by the store."""
+    where, p = asset_filters(variables, frequency, zoom, time_method, levels, dataset_id)
+    for col, val in (("product_type", product_type), ("experiment", experiment), ("domain", domain)):
+        if val is not None:
+            where.append(f"{col} = ?"); p.append(val)
+    sql = "select * exclude (collection, type) from assets where " + " and ".join(where)
+    if finest_only:
+        sql += (" qualify zoom is null or zoom = max(zoom) over "
+                "(partition by id, frequency, time_method, levels, part)")
+    out = rows(sql + " order by id, asset limit ?", p + [limit])
+    for r in out:
+        r["n_variables"] = len(r["variables"])
+        if len(r["variables"]) > 40:
+            r["variables"] = r["variables"][:40] + ["..."]
+    return out
+
+
 @mcp.tool()
 @logged
 def find_variable(query: str) -> list[dict]:
     """Map a quantity to variable names: matches the query (case-insensitive) against variable names, CF standard
     names and long names, e.g. "precipitation", "outgoing longwave", "rlut". Returns each matching variable with its
-    units, standard name and the datasets that have it."""
+    standard name and the datasets that have it, each with its own unit and frequencies (units can differ between
+    datasets, e.g. W m-2 vs accumulated J m-2)."""
     q = query.lower()
     out = []
     for v, by_ds in sorted(variable_table().items()):
@@ -212,7 +264,8 @@ def find_variable(query: str) -> list[dict]:
             units = sorted({str(e["unit"]) for e in by_ds.values()})
             out.append({"variable": v, "standard_name": meta["standard_name"], "long_name": meta["long_name"],
                         "units": units, "n_datasets": len(by_ds),
-                        "datasets": {d: sorted(e["frequencies"]) for d, e in sorted(by_ds.items())}})
+                        "datasets": {d: {"unit": e["unit"], "frequencies": sorted(e["frequencies"])}
+                                     for d, e in sorted(by_ds.items())}})
     return sorted(out, key=lambda e: -e["n_datasets"])[:30]
 
 
@@ -230,16 +283,19 @@ def describe_dataset(dataset_id: str, include_variables: bool = True) -> dict:
     links = [{"rel": l["rel"], "href": l["href"], "title": l.get("title")} for l in r.get("links", [])
              if l["rel"] in ("cite-as", "about", "license", "describedby")]
     assets, variables = {}, {}
+    parsed = {r["asset"]: {k: r[k] for k in ("frequency", "time_method", "levels", "part", "zoom") if r[k] is not None}
+              for r in rows("select * from assets where id = ?", (dataset_id,))}
     for key, a in assets_of(dataset_id).items():
-        assets[key] = {"type": a.get("type"), "zoom": a.get("km_scale:zoom"),
+        assets[key] = {**parsed.get(key, {}), "type": a.get("type"),
                        "copies": ["default"] + sorted(k for k, v in (a.get("alternate") or {}).items() if v),
                        "time_steps": a.get("cube:dimensions", {}).get("time", {}).get("count")}
         for v, c in a.get("cube:variables", {}).items():
             if c.get("type") == "data":
                 e = variables.setdefault(v, {"unit": c.get("unit"), "standard_name": c.get("cf:standard_name"),
                                              "long_name": c.get("description"), "frequencies": []})
-                if key.split(".")[0] not in e["frequencies"]:
-                    e["frequencies"].append(key.split(".")[0])
+                f = parsed.get(key, {}).get("frequency", key.split(".")[0])
+                if f not in e["frequencies"]:
+                    e["frequencies"].append(f)
     out = {"properties": props, "links": links, "assets": assets,
            "item_json": f"{CATALOG}/{km_scale._index()[dataset_id]['item']}",
            "page": f"{CATALOG}/item.html#{dataset_id}"}
@@ -250,41 +306,73 @@ def describe_dataset(dataset_id: str, include_variables: bool = True) -> dict:
 
 @mcp.tool()
 @logged
-def how_to_open(dataset_id: str, frequency: str = "PT1H", zoom: int | None = None,
-                location: str | None = None) -> dict:
+def how_to_open(dataset_id: str, asset: str | None = None, frequency: str | None = None, zoom: int | None = None,
+                time_method: str | None = None, levels: str | None = None, location: str | None = None) -> dict:
     """How to open a dataset at the user's site: which copy to read, its URL or path, and Python code to open it.
 
-    frequency and zoom pick the asset (zoom defaults to the finest available). location is the user's site (e.g.
-    "UK" on JASMIN, "EU" on Levante); default: KM_SCALE_USER_LOCATION, else "online". Also returns which copy every
-    other site would read."""
-    assets = assets_of(dataset_id)
-    if zoom is None:
-        zs = [a["km_scale:zoom"] for k, a in assets.items() if k.split(".")[0] == frequency and "km_scale:zoom" in a]
-        if not zs:
-            raise KeyError(f"{dataset_id}: no assets at {frequency!r}; available: {', '.join(sorted(assets))}")
-        zoom = max(zs)
+    Pick the store by its asset key (from find_assets or describe_dataset, e.g. "PT1H_inst.z11"), or by frequency,
+    zoom (default: the finest), time_method and levels. If several stores match, the first is used and the others
+    are listed. location is the user's site (e.g. "UK" on JASMIN, "EU" on Levante); default:
+    KM_SCALE_USER_LOCATION, else "online". Also returns which copy every other site would read."""
+    if asset is None:
+        where, p = asset_filters(frequency=frequency, zoom=zoom, time_method=time_method, levels=levels,
+                                 dataset_id=dataset_id)
+        cands = [r["asset"] for r in rows("select asset from assets where " + " and ".join(where)
+                                          + " order by zoom desc nulls last, asset", p)]
+        if not cands:
+            have = [r["asset"] for r in rows("select asset from assets where id = ? order by asset", (dataset_id,))]
+            if not have:
+                raise KeyError(f"unknown dataset {dataset_id!r}; use search_datasets to find ids")
+            raise KeyError(f"{dataset_id}: no store matches; its assets are {', '.join(have)}")
+        top = rows("select zoom from assets where id = ? and asset = ?", (dataset_id, cands[0]))[0]["zoom"]
+        asset, others = cands[0], [c for c in cands[1:]
+                                   if rows("select zoom from assets where id = ? and asset = ?", (dataset_id, c))[0]
+                                   ["zoom"] == top]
+    else:
+        others = []
+    a = rows("select zoom, frequency from assets where id = ? and asset = ?", (dataset_id, asset))
+    if not a:
+        raise KeyError(f"{dataset_id}: no asset {asset!r}; use find_assets or describe_dataset to list them")
     loc = location or os.environ.get("KM_SCALE_USER_LOCATION", km_scale.ONLINE)
-    href, opts, copy = km_scale._choose(dataset_id, frequency, zoom, location=loc)
+    href, opts, copy = km_scale._choose(dataset_id, asset=asset, location=loc)
     note = None
     if loc != km_scale.ONLINE and not copy.startswith((loc, f"{km_scale.ONLINE} via {loc}")):
         note = f"You are at {loc!r} but the nearest copy is {copy!r}: reading it may be slow."
     code = (f"import km_scale  # KM_SCALE_USER_LOCATION={loc}\n"
-            f"ds = km_scale.open_dataset({dataset_id!r}, freq={frequency!r}, zoom={zoom})\n\n"
+            f"ds = km_scale.open_dataset({dataset_id!r}, asset={asset!r})\n\n"
             f"# or directly with xarray:\nimport xarray as xr\n"
             f"ds = xr.open_zarr({href!r}" + (f", storage_options={opts!r}" if opts else "") + ")")
-    return {"location": loc, "copy": copy, "href": href, "storage_options": opts, "note": note, "code": code,
-            "other_sites": {s: c for s, (c, _) in km_scale.where(dataset_id, frequency, zoom).items()}}
+    return {"asset": asset, "other_matching_assets": others, "location": loc, "copy": copy, "href": href,
+            "storage_options": opts, "note": note, "code": code,
+            "other_sites": {s: c for s, (c, _) in km_scale.where(dataset_id, asset=asset).items()}}
 
 
 @mcp.tool()
 @logged
 def query_catalog(sql: str) -> dict:
-    """Run a read-only SQL (DuckDB) query on table `items`, one row per dataset, for questions the other tools don't
-    answer (counts, comparisons, unusual filters). Quote property names, which contain colons:
-    "km_scale:variables" (list), "km_scale:frequencies" (list), "km_scale:zooms" (list), "km_scale:experiment",
-    "km_scale:product_type", "km_scale:domain", "km_scale:source_id", "km_scale:sites" (list), plus id, title,
-    description, license, collection, start_datetime, end_datetime, bbox (struct xmin/ymin/xmax/ymax), assets
-    (struct of assets; cube:* fields are JSON text). Results are capped at 200 rows."""
+    """Run a read-only SQL (DuckDB) query, for questions the other tools don't answer (counts, comparisons, unusual
+    filters). Results are capped at 200 rows. Two tables:
+
+    `assets`: one row per store (dataset, frequency, zoom). Prefer it for anything about variables, frequencies or
+    time. Columns: id, asset (key), frequency, frequency_inferred, time_method, levels, part, zoom, variables (list),
+    vertical_dims (list), n_time, time_start, time_end (ISO text), format, href, copies (list of sites),
+    product_type, domain, experiment, source_id.
+
+    `items`: one row per dataset. Quote names with colons: "km_scale:experiment", "km_scale:product_type",
+    "km_scale:domain", "km_scale:source_id", "km_scale:sites" (list), "km_scale:variables" (list); plus id, title,
+    description, license, start_datetime, end_datetime, bbox (struct xmin/ymin/xmax/ymax), providers.
+
+    Examples:
+      -- which datasets have hourly pr, at their finest zoom
+      select id, max(zoom) from assets where frequency = 'PT1H' and list_contains(variables, 'pr') group by id
+      -- every variable of one dataset, with the frequencies it comes at
+      select v, list_sort(list_distinct(list(frequency))) from assets, unnest(variables) as t(v)
+        where id = 'icon_d3hp003' group by v
+      -- time coverage per dataset and frequency
+      select id, frequency, min(time_start), max(time_end), max(n_time) from assets group by all order by id
+      -- datasets with a variable missing from one of their frequencies
+      select id, frequency from assets where id in (select id from assets where list_contains(variables, 'rlut'))
+        group by id, frequency having not bool_or(list_contains(variables, 'rlut'))"""
     s = sql.strip().rstrip(";")
     if not s.lower().startswith(("select", "with")):
         raise ValueError("only SELECT or WITH queries")
