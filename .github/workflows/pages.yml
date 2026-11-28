@@ -33,8 +33,8 @@ jobs:
         run: uv run --group dev pytest -q
       - name: Build the STAC catalogue and site
         run: uv run build_catalog.py hk25 build
-      - name: Check the built catalogue (no bare local paths, no glob hrefs)
-        run: KM_SCALE_BUILD=build uv run --group dev pytest -q tests/test_build.py
+      - name: Check the built catalogue (no bare local paths, no glob hrefs) and the MCP server's tools on it
+        run: KM_SCALE_BUILD=build uv run --group dev --group mcp pytest -q tests/test_build.py tests/test_mcp.py
       - name: Validate against the STAC schemas
         run: uv run validate.py build
       - uses: actions/configure-pages@v5

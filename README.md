@@ -73,6 +73,30 @@ Two differences from the JSON Items, because Arrow makes a column per dictionary
 `cube:dimensions` and `cube:variables` are JSON text, and the Items gain flat `km_scale:variables`,
 `km_scale:frequencies` and `km_scale:zooms` lists for querying. Not yet checked: whether STAC Browser reads the file.
 
+## An MCP server for agents (prototype)
+
+`km_scale_mcp.py` lets an AI agent (Claude Code, an IDE assistant, OpenCode with a local model) search the catalogue
+and get code to open a dataset at the user's site. It is read-only and runs locally over stdio: it loads
+`items.parquet` into an in-memory DuckDB table, and uses `km_scale` to choose the copy. No server of ours.
+
+```sh
+claude mcp add km-scale -e KM_SCALE_USER_LOCATION=UK -- \
+    uv run -q --directory /path/to/this/repo --group mcp python km_scale_mcp.py
+```
+
+| Tool | Does |
+|---|---|
+| `catalog_overview` | The vocabulary: experiments, product types, domains, frequencies, zooms, sites, common variables |
+| `search_datasets` | Filter by variables, frequency, zoom, experiment, product type, domain, model, text, a point, a period, a site |
+| `find_variable` | Map a quantity ("precipitation") to variable names, with units and the datasets that have them |
+| `describe_dataset` | One dataset: description, time, footprint, licence, citation links, assets and copies, variables |
+| `how_to_open` | Which copy to read from the user's site, its URL, Python code, and what every other site would read |
+| `query_catalog` | Read-only SQL on the `items` table, for anything else. DuckDB can't read files or URLs from it |
+
+Each tool call is appended to `~/.km_scale/mcp_log.jsonl` (tool, arguments, result count, error, time taken). It
+stays on the user's machine; `KM_SCALE_MCP_LOG=off` turns it off. `KM_SCALE_CATALOG` points the server at another
+build (default: the published site). `tests/test_mcp.py` calls each tool against a fresh build in CI.
+
 ## Validation
 
 Store validation is [data-forge](https://github.com/km-scale/data-forge)'s job: its validator

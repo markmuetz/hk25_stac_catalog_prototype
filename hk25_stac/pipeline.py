@@ -42,6 +42,11 @@ def collect(hk25_root, sites, vocab, problems):
                 problems.add(d.id, f"{key}: copy at {site} left out (glob href {a['alternate'].pop(site)['href']})")
             if a.get("alternate") == {}:
                 del a["alternate"]
+        seen = {}
+        for key, a in d.assets.items():  # e.g. a URL template that ignores one of its parameters
+            if a["href"] in seen:
+                problems.add(d.id, f"{key} has the same href as {seen[a['href']]} ({a['href']})")
+            seen.setdefault(a["href"], key)
         drafts.append(d)
     return drafts
 

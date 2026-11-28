@@ -10,6 +10,10 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest", "duckdb"]
+mcp = [
+    "duckdb>=2.0.1",
+    "mcp>=2.3.0",
+]
 
 [tool.uv]
 package = false
