@@ -193,6 +193,9 @@ class Hk25Dataset:
                 a["km_scale:format"] = fmt
             if "zoom" in params:  # HK25's zoom parameter: a HEALPix refinement level, one store per level
                 a["dggs:dggrs"], a["dggs:refinement_level"] = HEALPIX_DGGRS, int(params["zoom"])
+                # Without dggs:indexing_scheme, zone ids would follow the OGC DGGRS's own (textual) indexing. HK25
+                # stores use nested integer ids; a store's grid mapping overrides this if it says otherwise.
+                a["dggs:indexing_scheme"] = "nested"
             alt = {}
             for site, e in self.entries.items():
                 if site == self.default_site or key not in e.urls_by_key:

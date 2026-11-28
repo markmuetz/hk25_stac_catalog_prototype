@@ -192,10 +192,8 @@ def datacube(meta, zoom, freq, source_meta, coords=None):
             level, scheme = hp if hp else (int(zoom), None)
             src = "from the store's grid mapping" if hp else "assumed: no healpix grid mapping in the store"
             o = {"type": "dggs", "reference_system": HEALPIX_DGGRS_URI, "dggs:refinement_level": level,
-                 "extent": [0, n - 1], "count": n,
+                 "dggs:indexing_scheme": scheme or "nested", "extent": [0, n - 1], "count": n,
                  "description": f"HEALPix {scheme or 'nested'}, refinement level {level} ({src})"}
-            if scheme:
-                o["dggs:indexing_scheme"] = scheme
         elif d.lower() in VERTICAL_NAMES or sn in ("air_pressure", "height", "depth", "model_level_number"):
             o = {"type": "spatial", "axis": "z", "count": n}
         else:

@@ -73,3 +73,18 @@ def test_item_and_collection_carry_dggs():
     c = to_collection("UM", [d]).to_dict()
     assert c["summaries"]["dggs:refinement_level"] == [0, 8] and c["summaries"]["dggs:dggrs"] == ["HEALPix"]
     assert EXT["dggs"] in c["stac_extensions"]
+
+
+def test_hk25_zoom_assets_say_nested():
+    """Without an indexing scheme, DGGS zone ids would be read as the OGC DGGRS's textual ones."""
+    import json
+    from pathlib import Path
+    import pytest as _pytest
+    build = Path(__file__).parent.parent / "build" / "stac"
+    if not build.exists():
+        _pytest.skip("no build")
+    for p in build.rglob("*.json"):
+        d = json.loads(p.read_text())
+        for a in d.get("assets", {}).values() if d.get("type") == "Feature" else []:
+            if a.get("dggs:dggrs") == "HEALPix":
+                assert a.get("dggs:indexing_scheme") in ("nested", "ring"), (d["id"], a["href"])
