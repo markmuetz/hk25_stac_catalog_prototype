@@ -85,7 +85,8 @@ duckdb.sql("""
 
 In `items.parquet`, two differences from the JSON Items, because Arrow makes a column per dictionary key: each asset's
 `cube:dimensions` and `cube:variables` are JSON text, and the Items gain flat `km_scale:variables`,
-`km_scale:frequencies` and `km_scale:zooms` lists for querying. Not yet checked: whether STAC Browser reads the file.
+`km_scale:frequencies` and `km_scale:zooms` lists for querying (`km_scale:zooms` collects the assets'
+`dggs:refinement_level`). Not yet checked: whether STAC Browser reads the file.
 
 ## An MCP server for agents (prototype)
 
@@ -159,37 +160,52 @@ km_scale.search(experiment="dyamond3-p4k")
 
 ## HK25 vs HK27 layout
 
-HK25 has one store per zoom, so assets here are keyed `<freq>.z<zoom>` (e.g. `PT1H.z8`), with `km_scale:zoom`.
-HK27 stores will hold zoom groups, so assets would be keyed `<freq>` and list their refinement levels. That also
-shrinks the STAC: here it's 6.2 MB, because each zoom's asset repeats its datacube.
+HK25 has one store per zoom, so assets here are keyed `<freq>.z<zoom>` (e.g. `PT1H.z8`), each with its own
+`dggs:refinement_level`, as the DGGS extension recommends.
 
-## STAC extensions used (as of 2026-11-27)
+HK27 stores will hold zoom groups (`z0`…`zN` in one store, opened as a DataTree), so assets would be keyed `<freq>`.
+For such a multiscale asset the DGGS extension says `dggs:refinement_level` is the **finest** level in it (e.g. 10),
+and that the other levels are described in the file. That doesn't say which levels a store holds (all of 0–10, or
+only some), so until [dggs#2](https://github.com/stac-extensions/dggs/issues/2) decides (a `dggs:refinement_levels`
+list is being discussed), the asset would also carry our own `km_scale:refinement_levels` list, and the Collection
+summary lists every level. Zoom groups also shrink the STAC: here it's 6.2 MB, because each zoom's asset repeats its
+datacube.
 
-From `EXT` in `hk25_stac/util.py` and `to_item` in `hk25_stac/stac_out.py`, which sets each Item's `stac_extensions`. Collections declare none.
+## STAC extensions used (as of 2026-11-28)
+
+From `EXT` in `hk25_stac/util.py`. `extensions()` in `hk25_stac/stac_out.py` sets each Item's `stac_extensions` from
+the field names it actually uses. Collections declare only dggs (for their level summaries).
 
 | Extension | Where | How |
 |---|---|---|
 | alternate-assets v1.2.0 | every Item | Genuinely separate copies at other sites (NERSC path, Waterpark mirror, ...) are `alternate` entries keyed by site name. The default `href` is the online copy, or the local path at the one site holding data with no online copy (`km_scale:site_only`). Local paths are `file://` URIs: a bare `/path` would be resolved against the catalogue's own URL. `km_scale` and the pages strip the scheme |
 | zarr v1.1.0 | every Item | `zarr:consolidated`, `zarr:zarr_format` |
-| datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 989 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension is an additional dimension with `type: "healpix"`: our own convention |
+| datacube v2.3.0 | Items whose Zarr metadata could be read (797 of 989 assets) | Per asset (one per frequency and zoom), from consolidated metadata. The HEALPix cell dimension has `type: "dggs"`, `reference_system` (the OGC HEALPix URI) and `dggs:refinement_level`, as the DGGS extension describes; the `dggs` dimension type itself is still an open datacube PR ([#38](https://github.com/stac-extensions/datacube/pull/38)), so it validates as an additional dimension |
+| dggs v0.1.0 (proposal) | HEALPix assets; Collection summaries | `dggs:dggrs: "HEALPix"`, `dggs:refinement_level` (the zoom, from the store's name; checked against the grid mapping), `dggs:indexing_scheme` (`nested`/`ring`, from the grid mapping), and a `dggrs-definition` link. Collections summarise the levels. **The schema isn't published yet** (its URL is a 404): `validate.py` reads it from the extension's repository at a pinned commit |
+| projection v2.0.0 | HEALPix assets whose store states an ellipsoid | `proj:code: EPSG:4326` for WGS 84, or `proj:projjson` built from the ellipsoid axes, as the DGGS extension asks for the figure of the Earth. No HK25 store states one, so none is written yet |
 | cf v1.0.0 | with datacube | `cf:standard_name`, `cf:cell_methods` on `cube:variables` |
-| processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR) only | |
-| scientific v1.0.0 | Items whose store gives a DOI (CERES) | `sci:doi`, plus a `cite-as` link |
+| processing v1.3.0 | derived MCS-tracks Items (PyFLEXTRKR); UM Items | `processing:software`; `processing:version` from the UM's `processing_version` (the HEALPix pipeline's version, not the dataset's) |
+| scientific v1.0.0 | Items with a DOI, references or a citation | `sci:doi` plus a `cite-as` link; `sci:publications` from the references (one per DOI, with a `describedby` link; other URLs become `about` links; free text is one citation); `sci:citation` from a `citation` attribute (none in HK25) |
+| version v1.2.0 | Items whose store states a version (CERES) | `version`, from `product_version` or `version` |
 
 **Not used:**
-- **storage:** the design proposes `storage:schemes`/`storage:refs`, translated by the helper into fsspec
-  options; not built yet. The prototype instead puts fsspec options in a custom `km_scale:storage_options`
-  field on the asset or alternate, and endpoint overrides (e.g. JASMIN's internal endpoint) in the site table
-  (`config/sites.yaml`).
+- **storage** (v2, pilot): would carry nothing yet. Every href is `https://` or `file://`, which need no storage
+  scheme, and no asset uses `km_scale:storage_options`. Adopt it when a store is given as `s3://` with a
+  non-AWS endpoint (`custom-s3`, e.g. Waterpark's), with `storage:refs` on each copy. Site-internal routes (e.g.
+  JASMIN's internal endpoint) stay in the site table (`config/sites.yaml`): they depend on where the user is,
+  which the storage extension doesn't describe.
+- **xarray-assets:** deprecated upstream ("too specific to xarray and Python"); zarr + storage + xpystac replace it.
 - **auth:** nothing yet; all HK25 online stores are public.
-- **dggs** (proposed extension): not used. `type: "healpix"` and the `healpix:refinement_level` and
-  `healpix:indexing_scheme` asset fields (read from the store's grid mapping) stand in for it. It is the natural replacement once settled, alongside the Zarr DGGS convention.
 
-**Custom `km_scale:*` fields:** `zoom`, `format`, `storage_options`, `sites`, `site_only`, `reachable`,
-`product_type`, `experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `references`,
-`license_text`, `feature`, `time_from_data`, `time_unknown`, `source`, `acknowledgment`, `version`, `simulation`,
-`requires` (e.g. `["gribscan"]`), `ellipsoid` and `spherical` (on assets, from the grid mapping), and `from_store`
-(which properties came from store attributes).
+**Custom `km_scale:*` fields:** `format`, `storage_options`, `sites`, `site_only`, `reachable`, `product_type`,
+`experiment`, `experiment_inferred`, `source_id`, `domain`, `resolution`, `creators`, `license_text`, `feature`,
+`time_from_data`, `time_unknown`, `source`, `acknowledgment`, `simulation`, `requires` (e.g. `["gribscan"]`),
+`ellipsoid` (only for an ellipsoid name with no known EPSG code) and `spherical` (a HEALPix store that states no
+figure of the Earth: a sphere of unstated radius, which no CRS field can express; all HK25 stores), and `from_store`
+(which properties came from store attributes). Replaced on 28 Nov 2026 by standard fields: `zoom`
+(`dggs:refinement_level`), `healpix:refinement_level` and `healpix:indexing_scheme` (dggs), `references`
+(`sci:publications`), `version` (`version`, or `processing:version`), and `ellipsoid` where a CRS can be given
+(projection).
 
 ## Results (2026-11-18)
 

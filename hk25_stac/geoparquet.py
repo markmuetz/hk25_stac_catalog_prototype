@@ -4,8 +4,8 @@ One row per Item (https://github.com/stac-utils/stac-geoparquet). Two changes fr
 makes a column per dictionary key:
 - each asset's ``cube:dimensions`` and ``cube:variables`` (keyed by dimension and variable name) are stored as JSON
   text;
-- flat lists ``km_scale:variables`` (data variables), ``km_scale:frequencies`` and ``km_scale:zooms`` are added to
-  the properties, so the common questions are plain column queries.
+- flat lists ``km_scale:variables`` (data variables), ``km_scale:frequencies`` and ``km_scale:zooms`` (the assets'
+  ``dggs:refinement_level`` values) are added to the properties, so the common questions are plain column queries.
 
     duckdb.sql("select id from 'items.parquet' where list_contains(\"km_scale:variables\", 'pr')")
 
@@ -30,8 +30,8 @@ def flatten(item):
     variables, freqs, zooms = set(), set(), set()
     for key, a in d["assets"].items():
         freqs.add(key.split(".")[0])
-        if "km_scale:zoom" in a:
-            zooms.add(a["km_scale:zoom"])
+        if "dggs:refinement_level" in a:
+            zooms.add(a["dggs:refinement_level"])
         variables |= {v for v, c in a.get("cube:variables", {}).items() if c.get("type") == "data"}
         for f in CUBE_FIELDS:
             if f in a:
@@ -101,11 +101,11 @@ def asset_rows(item):
         if row["frequency"] is None and (f := infer_frequency(dims.get("time"))):
             row["frequency"], row["frequency_inferred"] = f, True
         if row["zoom"] is None:
-            row["zoom"] = a.get("km_scale:zoom")
+            row["zoom"] = a.get("dggs:refinement_level")
         time = dims.get("time", {})
         row.update({
             "variables": sorted(v for v, c in variables.items() if c.get("type") == "data"),
-            "vertical_dims": sorted(d for d, c in dims.items() if d not in NOT_VERTICAL and c.get("type") != "healpix"),
+            "vertical_dims": sorted(d for d, c in dims.items() if d not in NOT_VERTICAL and c.get("type") not in ("dggs", "healpix")),
             "n_time": time.get("count"), "time_start": (time.get("extent") or [None, None])[0],
             "time_end": (time.get("extent") or [None, None])[1],
             "type": a.get("type"), "format": a.get("km_scale:format", "zarr" if "zarr" in a.get("type", "") else None),

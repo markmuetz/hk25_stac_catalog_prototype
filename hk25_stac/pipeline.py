@@ -66,7 +66,7 @@ def probe(drafts, problems):
     groups = defaultdict(list)
     for (dsid, key), m in metas.items():
         if m is not None:
-            groups[(dsid, key.split(".")[0])].append((by_id[dsid].assets[key].get("km_scale:zoom", 0), key))
+            groups[(dsid, key.split(".")[0])].append((by_id[dsid].assets[key].get("dggs:refinement_level", 0), key))
     first = {g: min(lst)[1] for g, lst in groups.items()}
     print(f"reading coordinates from {len(first)} stores ...", file=sys.stderr)
     with cf.ThreadPoolExecutor(16) as ex:
@@ -83,13 +83,13 @@ def probe(drafts, problems):
         if m.zarr_format == 3:
             a["type"] = "application/vnd.zarr; version=3"
         freq = key.split(".")[0].split("_")[0]
-        a["cube:dimensions"], a["cube:variables"] = datacube(m, a.get("km_scale:zoom"), freq, by_id[dsid].meta,
+        a["cube:dimensions"], a["cube:variables"] = datacube(m, a.get("dggs:refinement_level"), freq, by_id[dsid].meta,
                                                              coords.get((dsid, key.split(".")[0])))
         rules.apply_asset_rules(dsid, key, a, m, problems)
 
     # each dataset's store attributes, merged over its stores, coarsest zoom first
     attrs = defaultdict(dict)
-    for (dsid, key), m in sorted(metas.items(), key=lambda kv: by_id[kv[0][0]].assets[kv[0][1]].get("km_scale:zoom", 0)):
+    for (dsid, key), m in sorted(metas.items(), key=lambda kv: by_id[kv[0][0]].assets[kv[0][1]].get("dggs:refinement_level", 0)):
         if m is not None:
             for k, v in m.attrs.items():
                 attrs[dsid].setdefault(k, v)

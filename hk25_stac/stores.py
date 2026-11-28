@@ -12,7 +12,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .util import fetch_json, iso
+from .util import HEALPIX_DGGRS_URI, fetch_json, iso
 
 VERTICAL_NAMES = {"pressure", "plev", "level", "lev", "height", "depth", "pressure_level", "isobaricinhpa"}
 DTYPES = {"<f4": "float32", "<f8": "float64", "<i4": "int32", "<i8": "int64", "|i1": "int8", "<i2": "int16",
@@ -191,9 +191,11 @@ def datacube(meta, zoom, freq, source_meta, coords=None):
             hp = meta.healpix()
             level, scheme = hp if hp else (int(zoom), None)
             src = "from the store's grid mapping" if hp else "assumed: no healpix grid mapping in the store"
-            o = {"type": "healpix", "extent": [0, n - 1], "count": n,
-                 "description": f"HEALPix {scheme or 'nested'}, refinement level {level} ({src}; "
-                                f"HK25 stores record no ellipsoid)"}
+            o = {"type": "dggs", "reference_system": HEALPIX_DGGRS_URI, "dggs:refinement_level": level,
+                 "extent": [0, n - 1], "count": n,
+                 "description": f"HEALPix {scheme or 'nested'}, refinement level {level} ({src})"}
+            if scheme:
+                o["dggs:indexing_scheme"] = scheme
         elif d.lower() in VERTICAL_NAMES or sn in ("air_pressure", "height", "depth", "model_level_number"):
             o = {"type": "spatial", "axis": "z", "count": n}
         else:

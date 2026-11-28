@@ -16,7 +16,16 @@ data (coordinates) fill what both lack.
 
 from datetime import datetime
 
-from .util import GLOBAL_BBOX, bbox_geometry, bounds_to_bbox, iso, truthy
+from .util import (
+    GLOBAL_BBOX,
+    HEALPIX_DGGRS,
+    bare_doi,
+    bbox_geometry,
+    bounds_to_bbox,
+    iso,
+    references,
+    truthy,
+)
 
 PLACEHOLDERS = {"", "UNSET", "unset", "none", "None", "Created by xios", "NICAM data output"}
 
@@ -127,11 +136,23 @@ class DoiRule(KeyRule):
     """The bare DOI goes to sci:doi (scientific extension), with a cite-as link."""
 
     def use(self, ctx, value, key):
-        import re
-        doi = re.sub(r"^(doi:|https?://(dx\.)?doi\.org/)", "", str(value).strip(), flags=re.I)
+        doi = bare_doi(value)
         ctx.props["sci:doi"] = doi
         ctx.draft.links.append({"rel": "cite-as", "href": f"https://doi.org/{doi}"})
         ctx.filled.append(f"sci:doi <- {key}")
+
+
+class ReferencesRule(KeyRule):
+    """References -> sci:publications (DOIs and citations) and about links (other URLs), if the source had none."""
+
+    def use(self, ctx, value, key):
+        if ctx.props.get("sci:publications"):
+            return
+        pubs, links = references(value)
+        if pubs:
+            ctx.props["sci:publications"] = pubs
+        ctx.draft.links += links
+        ctx.filled.append(f"sci:publications <- {key}")
 
 
 class DocumentationRule(KeyRule):
@@ -233,10 +254,15 @@ class HealpixGridRule(AssetRule):
         hp = meta.healpix()
         if not hp:
             return
-        asset["healpix:refinement_level"], asset["healpix:indexing_scheme"] = hp
-        zoom = asset.get("km_scale:zoom")
-        if zoom is not None and hp[0] is not None and hp[0] != zoom:
-            problems.add(dsid, f"{key} grid mapping says refinement level {hp[0]}, store name says zoom {zoom}")
+        level, scheme = hp
+        asset["dggs:dggrs"] = HEALPIX_DGGRS
+        if scheme:
+            asset["dggs:indexing_scheme"] = scheme
+        named = asset.get("dggs:refinement_level")  # from the store's name (the source catalogue wins)
+        if named is None and level is not None:
+            asset["dggs:refinement_level"] = level
+        elif named is not None and level is not None and level != named:
+            problems.add(dsid, f"{key} grid mapping says refinement level {level}, store name says zoom {named}")
 
 
 class ReadElsewhere(AssetRule):
@@ -247,16 +273,45 @@ class ReadElsewhere(AssetRule):
 
 
 class EllipsoidRule(AssetRule):
-    """The reference ellipsoid, as given; ``km_scale:spherical`` when a HEALPix store describes none."""
+    """The figure of the Earth the HEALPix grid is on, as a CRS (projection extension), as the DGGS extension asks.
+
+    WGS 84 by name -> ``proj:code: EPSG:4326``; ellipsoid axes -> ``proj:projjson``. A name we
+    don't know stays as ``km_scale:ellipsoid``; no figure at all -> ``km_scale:spherical: true`` (a sphere of unstated
+    radius, which no CRS field can express).
+    """
 
     def apply(self, dsid, key, asset, meta, problems):
         if meta.grid_mapping("healpix") is None:
             return
         ell = meta.ellipsoid()
-        if ell:
+        crs = ellipsoid_crs(ell) if ell else None
+        if crs:
+            asset.update(crs)
+        elif ell:
             asset["km_scale:ellipsoid"] = ell
         else:
             asset["km_scale:spherical"] = True
+
+
+def ellipsoid_crs(ell):
+    """{proj:code} or {proj:projjson} for a grid mapping's ellipsoid attributes, or None if it can't be expressed."""
+    name = str(ell.get("reference_ellipsoid_name", "")).replace("-", " ").strip().upper()
+    if name in ("WGS 84", "WGS84"):
+        return {"proj:code": "EPSG:4326"}
+    if "semi_major_axis" in ell and "inverse_flattening" in ell:
+        figure = {"name": "unnamed", "semi_major_axis": float(ell["semi_major_axis"]),
+                  "inverse_flattening": float(ell["inverse_flattening"])}
+    elif "semi_major_axis" in ell and "semi_minor_axis" in ell:
+        figure = {"name": "unnamed", "semi_major_axis": float(ell["semi_major_axis"]),
+                  "semi_minor_axis": float(ell["semi_minor_axis"])}
+    else:
+        return None
+    axes = [{"name": "Geodetic latitude", "abbreviation": "Lat", "direction": "north", "unit": "degree"},
+            {"name": "Geodetic longitude", "abbreviation": "Lon", "direction": "east", "unit": "degree"}]
+    return {"proj:code": None, "proj:projjson": {
+        "$schema": "https://proj.org/schemas/v0.7/projjson.schema.json", "type": "GeographicCRS",
+        "name": "unknown", "datum": {"type": "GeodeticReferenceFrame", "name": "unknown", "ellipsoid": figure},
+        "coordinate_system": {"subtype": "ellipsoidal", "axis": axes}}}
 
 
 class CodecRule(AssetRule):
@@ -334,12 +389,16 @@ DATASET_RULES = [
                      notes="Only if the source has no range. Failing both, the build reads the time coordinate"),
     KeyRule("Description", "summary", ["description"], "`description`"),
     KeyRule("Creators", "creator_name", ["creator"], "`km_scale:creators`"),
-    KeyRule("References", "references", ["reference"], "`km_scale:references`", "DOIs in it are shown as links", required_by=DF_RECOMMENDED),
+    ReferencesRule("References", "references", ["reference"], "`sci:publications`, and `about` links",
+                   "A list of URLs gives one publication per DOI and an `about` link per other URL; other text is one "
+                   "citation", required_by=DF_RECOMMENDED),
+    KeyRule("Citation", "citation", [], "`sci:citation`", "How to cite the data (ACDD has no such key; CF-style)"),
     KeyRule("Source", "source", [], "`km_scale:source`", required_by=DF_RECOMMENDED),
     KeyRule("Acknowledgement", "acknowledgment", ["acknowledgement"], "`km_scale:acknowledgment`",
             "ACDD's spelling"),
-    KeyRule("Version", "product_version", ["version", "processing_version"], "`km_scale:version`",
-            "UM's `processing_version` may be a pipeline version rather than the dataset's"),
+    KeyRule("Version", "product_version", ["version"], "`version`", "The version extension's field"),
+    KeyRule("Processing version", "processing_version", [], "`processing:version`",
+            "The version of the processing chain (UM: the HEALPix pipeline), not of the dataset"),
     KeyRule("Simulation name", "simulation", [], "`km_scale:simulation`", "Our own key (UM)"),
     ProvidersRule("Producer", "institution", [], "`providers` (role `producer`)", required_by=DF_RECOMMENDED),
     LicenseTextRule("Licence", "license", [], "`km_scale:license_text`",
@@ -358,15 +417,17 @@ ASSET_RULES = [
     ReadElsewhere("Grid type", "grid_mapping_name: healpix", [], "finds the grid mapping",
                   "On a grid-mapping variable (e.g. a scalar `crs`)"),
     HealpixGridRule("Refinement level", "refinement_level", ["healpix_level", "zoom", "healpix_nside"],
-                    "`healpix:refinement_level` on the asset",
-                    "Level from `healpix_nside` is log2(nside). Checked against the zoom in the store's name"),
+                    "`dggs:refinement_level` and `dggs:dggrs: HEALPix` on the asset (DGGS extension)",
+                    "Level from `healpix_nside` is log2(nside). The zoom in the store's name wins; a different level "
+                    "here is a problem. For a store holding several levels (HK27) it is the finest"),
     ReadElsewhere("Indexing scheme", "indexing_scheme: nest", ["healpix_order: nest"],
-                  "`healpix:indexing_scheme` on the asset (read with the level)",
+                  "`dggs:indexing_scheme` on the asset (read with the level)",
                   "data-forge requires `nest`. The catalogue writes `nested` or `ring`, as xdggs does, and also reads "
                   "`nested` (HK25 stores)"),
     EllipsoidRule("Ellipsoid", "reference_ellipsoid_name",
                   ["semi_major_axis + inverse_flattening", "semi_major_axis + semi_minor_axis"],
-                  "`km_scale:ellipsoid` on the asset, or `km_scale:spherical: true` if none is given",
+                  "`proj:code` (WGS 84) or `proj:projjson` on the asset (projection extension); `km_scale:ellipsoid` "
+                  "for a name we can't map; `km_scale:spherical: true` if none is given",
                   "HK27 output is on the ellipsoidal HEALPix grid; data-forge reports a spherical grid as an error "
                   "unless run with `--allow-spherical`"),
     CodecRule("Extra software", None, [], "`km_scale:requires` on the asset",

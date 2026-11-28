@@ -7,9 +7,9 @@ from hk25_stac.geoparquet import asset_rows, flatten, infer_frequency, parse_key
 
 def test_flatten():
     item = {"properties": {}, "assets": {
-        "PT1H.z8": {"km_scale:zoom": 8, "cube:variables": {"pr": {"type": "data"}, "crs": {"type": "auxiliary"}},
+        "PT1H.z8": {"dggs:refinement_level": 8, "cube:variables": {"pr": {"type": "data"}, "crs": {"type": "auxiliary"}},
                     "cube:dimensions": {"time": {"type": "temporal"}}},
-        "static.z8": {"km_scale:zoom": 8}}}
+        "static.z8": {"dggs:refinement_level": 8}}}
     d = flatten(item)
     p = d["properties"]
     assert p["km_scale:variables"] == ["pr"] and p["km_scale:frequencies"] == ["PT1H", "static"]
@@ -45,11 +45,11 @@ def test_infer_frequency(dim, expected):
 
 def test_asset_rows():
     item = {"id": "ds1", "collection": "c", "properties": {"km_scale:domain": "global"}, "assets": {
-        "data.z4": {"href": "https://x/a.zarr", "type": "application/vnd.zarr; version=2", "km_scale:zoom": 4,
+        "data.z4": {"href": "https://x/a.zarr", "type": "application/vnd.zarr; version=2", "dggs:refinement_level": 4,
                     "alternate": {"UK": {"href": "file:///a.zarr"}},
                     "cube:dimensions": {"time": {"type": "temporal", "count": 25,
                                                  "extent": ["2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z"]},
-                                        "cell": {"type": "healpix"}, "level": {"type": "spatial"}},
+                                        "cell": {"type": "dggs"}, "level": {"type": "spatial"}},
                     "cube:variables": {"pr": {"type": "data"}, "lat": {"type": "auxiliary"}}}}}
     (r,) = asset_rows(item)
     assert (r["frequency"], r["frequency_inferred"], r["zoom"]) == ("PT1H", True, 4)

@@ -14,7 +14,7 @@ def gridlook(d):
     """A store for the gridlook viewer: global data only, the reachable online store nearest zoom 7."""
     if d.props["km_scale:domain"] != "global":
         return None
-    cands = [(abs(a.get("km_scale:zoom", 99) - 7), k, a) for k, a in d.assets.items()
+    cands = [(abs(a.get("dggs:refinement_level", 99) - 7), k, a) for k, a in d.assets.items()
              if a["href"].startswith("http") and a.get("km_scale:reachable", True) and a.get("km_scale:format") is None
              and not k.startswith("static")]
     return min(cands)[2]["href"] if cands else None

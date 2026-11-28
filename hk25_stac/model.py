@@ -25,7 +25,8 @@ class ItemDraft:
 
     @property
     def zooms(self):
-        return sorted({a["km_scale:zoom"] for a in self.assets.values() if "km_scale:zoom" in a})
+        """The HEALPix refinement levels (zooms) of the assets: one store per level in HK25."""
+        return sorted({a["dggs:refinement_level"] for a in self.assets.values() if "dggs:refinement_level" in a})
 
     @property
     def data_variables(self):

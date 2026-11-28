@@ -164,8 +164,8 @@ def open_datatree(dsid, freq="PT1H", *, zooms=None, location=None, source=None, 
     import xarray as xr
 
     it = item(dsid)
-    avail = sorted(a["km_scale:zoom"] for k, a in it["assets"].items()
-                   if k.split(".")[0] == freq and "km_scale:zoom" in a)
+    avail = sorted(a["dggs:refinement_level"] for k, a in it["assets"].items()
+                   if k.split(".")[0] == freq and "dggs:refinement_level" in a)
     if not avail:
         raise KeyError(f"{dsid}: no zoom levels for {freq!r}")
     nodes = {f"z{z}": open_dataset(dsid, freq, z, location=location, source=source, **kwargs)

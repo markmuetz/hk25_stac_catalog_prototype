@@ -37,10 +37,12 @@ fails if they drift. Edit the rules, not the tables.
 | Time range | `time_coverage_start`, `time_coverage_end` | none | catalogue only | `start_datetime`, `end_datetime` | Only if the source has no range. Failing both, the build reads the time coordinate |
 | Description | `summary` | `description` | catalogue only | `description` |  |
 | Creators | `creator_name` | `creator` | catalogue only | `km_scale:creators` |  |
-| References | `references` | `reference` | data-forge: recommended | `km_scale:references` | DOIs in it are shown as links |
+| References | `references` | `reference` | data-forge: recommended | `sci:publications`, and `about` links | A list of URLs gives one publication per DOI and an `about` link per other URL; other text is one citation |
+| Citation | `citation` | none | catalogue only | `sci:citation` | How to cite the data (ACDD has no such key; CF-style) |
 | Source | `source` | none | data-forge: recommended | `km_scale:source` |  |
 | Acknowledgement | `acknowledgment` | `acknowledgement` | catalogue only | `km_scale:acknowledgment` | ACDD's spelling |
-| Version | `product_version` | `version`, `processing_version` | catalogue only | `km_scale:version` | UM's `processing_version` may be a pipeline version rather than the dataset's |
+| Version | `product_version` | `version` | catalogue only | `version` | The version extension's field |
+| Processing version | `processing_version` | none | catalogue only | `processing:version` | The version of the processing chain (UM: the HEALPix pipeline), not of the dataset |
 | Simulation name | `simulation` | none | catalogue only | `km_scale:simulation` | Our own key (UM) |
 | Producer | `institution` | none | data-forge: recommended | `providers` (role `producer`) |  |
 | Licence | `license` | none | data-forge: recommended | `km_scale:license_text` | Kept only when the Item's licence is `other`. Ideally an SPDX id such as `CC-BY-4.0` |
@@ -54,9 +56,9 @@ fails if they drift. Edit the rules, not the tables.
 | Field | Preferred key | Accepted alternates | Required by | Goes to | Notes |
 |---|---|---|---|---|---|
 | Grid type | `grid_mapping_name: healpix` | none | data-forge: required | finds the grid mapping | On a grid-mapping variable (e.g. a scalar `crs`) |
-| Refinement level | `refinement_level` | `healpix_level`, `zoom`, `healpix_nside` | data-forge: required | `healpix:refinement_level` on the asset | Level from `healpix_nside` is log2(nside). Checked against the zoom in the store's name |
-| Indexing scheme | `indexing_scheme: nest` | `healpix_order: nest` | data-forge: required | `healpix:indexing_scheme` on the asset (read with the level) | data-forge requires `nest`. The catalogue writes `nested` or `ring`, as xdggs does, and also reads `nested` (HK25 stores) |
-| Ellipsoid | `reference_ellipsoid_name` | `semi_major_axis + inverse_flattening`, `semi_major_axis + semi_minor_axis` | data-forge: required | `km_scale:ellipsoid` on the asset, or `km_scale:spherical: true` if none is given | HK27 output is on the ellipsoidal HEALPix grid; data-forge reports a spherical grid as an error unless run with `--allow-spherical` |
+| Refinement level | `refinement_level` | `healpix_level`, `zoom`, `healpix_nside` | data-forge: required | `dggs:refinement_level` and `dggs:dggrs: HEALPix` on the asset (DGGS extension) | Level from `healpix_nside` is log2(nside). The zoom in the store's name wins; a different level here is a problem. For a store holding several levels (HK27) it is the finest |
+| Indexing scheme | `indexing_scheme: nest` | `healpix_order: nest` | data-forge: required | `dggs:indexing_scheme` on the asset (read with the level) | data-forge requires `nest`. The catalogue writes `nested` or `ring`, as xdggs does, and also reads `nested` (HK25 stores) |
+| Ellipsoid | `reference_ellipsoid_name` | `semi_major_axis + inverse_flattening`, `semi_major_axis + semi_minor_axis` | data-forge: required | `proj:code` (WGS 84) or `proj:projjson` on the asset (projection extension); `km_scale:ellipsoid` for a name we can't map; `km_scale:spherical: true` if none is given | HK27 output is on the ellipsoidal HEALPix grid; data-forge reports a spherical grid as an error unless run with `--allow-spherical` |
 | Extra software | none | none | catalogue only | `km_scale:requires` on the asset | From the codecs the arrays use: `gribscan.rawgrib` (IFS stores referencing GRIB) needs gribscan |
 <!-- generated from hk25_stac/rules.py: end -->
 

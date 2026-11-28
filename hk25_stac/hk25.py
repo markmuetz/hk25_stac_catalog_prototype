@@ -11,7 +11,16 @@ import jinja2
 import yaml
 
 from .model import ItemDraft
-from .util import PLACEHOLDER_DATETIME, bbox_geometry, bounds_to_bbox, iso, map_license, to_href
+from .util import (
+    HEALPIX_DGGRS,
+    PLACEHOLDER_DATETIME,
+    bbox_geometry,
+    bounds_to_bbox,
+    iso,
+    map_license,
+    references,
+    to_href,
+)
 
 # --- classification of HK25 ids (the HK25 catalogue has no product type or model field) -----------------------------
 MODEL_PREFIXES = [  # (prefix, Collection id, title)
@@ -171,8 +180,8 @@ class Hk25Dataset:
                 a["zarr:consolidated"] = bool(first.consolidated)
             if fmt != "zarr":
                 a["km_scale:format"] = fmt
-            if "zoom" in params:
-                a["km_scale:zoom"] = int(params["zoom"])
+            if "zoom" in params:  # HK25's zoom parameter: a HEALPix refinement level, one store per level
+                a["dggs:dggrs"], a["dggs:refinement_level"] = HEALPIX_DGGRS, int(params["zoom"])
             alt = {}
             for site, e in self.entries.items():
                 if site == self.default_site or key not in e.urls_by_key:
@@ -210,7 +219,8 @@ class Hk25Dataset:
             "km_scale:resolution": meta.get("resolution"),
             "km_scale:sites": self.sites,
             "km_scale:creators": meta.get("creator_name"),
-            "km_scale:references": meta.get("references") or meta.get("citation"),
+            "sci:citation": meta.get("citation"),
+            "sci:publications": references(meta.get("references"))[0],
             "km_scale:license_text": meta.get("license") if map_license(meta.get("license")) == "other" else None,
             **extra,
         }
@@ -226,6 +236,7 @@ class Hk25Dataset:
             problems.add(self.id, "no licence in metadata")
         props = {k: v for k, v in props.items() if v is not None}
         draft = ItemDraft(self.id, branch, coll, coll_title, props, assets, meta)
+        draft.links += references(meta.get("references"))[1]
         lon = [meta.get("geospatial_lon_min"), meta.get("geospatial_lon_max")]
         lat = [meta.get("geospatial_lat_min"), meta.get("geospatial_lat_max")]
         if props["km_scale:domain"] == "regional" and None not in lon + lat:

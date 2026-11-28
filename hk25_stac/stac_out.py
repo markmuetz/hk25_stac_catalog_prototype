@@ -17,7 +17,15 @@ from collections import defaultdict
 import pystac
 from pystac.utils import str_to_datetime
 
-from .util import EXT, GLOBAL_BBOX, STAC_VERSION
+from .util import (
+    EXT,
+    EXT_PREFIX,
+    GLOBAL_BBOX,
+    HEALPIX_DGGRS,
+    HEALPIX_DGGRS_URI,
+    STAC_VERSION,
+    VERSION_FIELDS,
+)
 
 ROOT_ID, ROOT_TITLE = "km-scale-hk25-example", "HK25 catalogue as STAC (HK27 prototype)"
 ROOT_DESC = "Example static STAC catalogue generated from the HK25 Intake catalogue."
@@ -33,26 +41,41 @@ BRANCH_ORDER = ["simulations", "observations", "reanalyses", "derived"]
 HK25_LICENCE_PAGE = "https://digital-earths-global-hackathon.github.io/catalog/"
 
 
+def extensions(props, assets):
+    """The extension schemas an Item uses, from the field names in its properties and assets (and their datacube
+    dimensions and variables, where cf and dggs fields also appear)."""
+    names = set(props)
+    for a in assets.values():
+        names |= set(a)
+        names |= {k for alt in a.get("alternate", {}).values() for k in alt}
+        for part in ("cube:dimensions", "cube:variables"):
+            names |= {k for v in a.get(part, {}).values() for k in v}
+    used = {EXT_PREFIX[n.split(":")[0]] for n in names if ":" in n and n.split(":")[0] in EXT_PREFIX}
+    if names & VERSION_FIELDS:
+        used.add("version")
+    if any("alternate" in a for a in assets.values()):  # the alternate-assets field has no prefix
+        used.add("alternate")
+    return sorted(EXT[e] for e in used)
+
+
 def to_item(d):
     """pystac Item from an ItemDraft."""
     props = dict(d.props)
     dt, start, end = (props.pop(k, None) for k in ("datetime", "start_datetime", "end_datetime"))
-    exts = [EXT["alternate"], EXT["zarr"]]
-    if any("cube:dimensions" in a for a in d.assets.values()):
-        exts += [EXT["datacube"], EXT["cf"]]
-    if "sci:doi" in props:
-        exts.append(EXT["scientific"])
     if props["km_scale:product_type"] == "derived":
-        exts.append(EXT["processing"])
         props["processing:software"] = {d.coll: "unknown"}
+    exts = extensions(props, d.assets)
     item = pystac.Item(d.id, d.geometry, d.bbox, str_to_datetime(dt) if dt else None, props,
                        start_datetime=str_to_datetime(start) if start else None,
                        end_datetime=str_to_datetime(end) if end else None,
-                       stac_extensions=sorted(set(exts)))
+                       stac_extensions=exts)
     for key, a in d.assets.items():
         a = dict(a)
         item.add_asset(key, pystac.Asset(a.pop("href"), title=a.pop("title", None), media_type=a.pop("type", None),
                                          roles=a.pop("roles", None), extra_fields=a))
+    if any(a.get("dggs:dggrs") == HEALPIX_DGGRS for a in d.assets.values()):
+        item.add_link(pystac.Link("https://www.opengis.net/def/rel/ogc/1.0/dggrs-definition", HEALPIX_DGGRS_URI,
+                                  title="HEALPix DGGRS (OGC)"))
     if props["license"] == "other" and props.get("km_scale:license_text"):
         item.add_link(pystac.Link("license", HK25_LICENCE_PAGE, title=props["km_scale:license_text"][:200]))
     for link in d.links:
@@ -68,14 +91,20 @@ def to_collection(coll, drafts):
     interval = [str_to_datetime(starts[0]) if starts else None, str_to_datetime(ends[-1]) if ends else None]
     summ = {"km_scale:experiment": sorted({d.props.get("km_scale:experiment") for d in drafts} - {None}),
             "km_scale:domain": sorted({d.props["km_scale:domain"] for d in drafts})}
+    levels = sorted({z for d in drafts for z in d.zooms})
+    if levels:  # the DGGS extension: available levels as a list (or a range) in the summaries
+        summ["dggs:dggrs"], summ["dggs:refinement_level"] = [HEALPIX_DGGRS], levels
     summ = {k: v for k, v in summ.items() if v}  # empty summaries are invalid STAC
     provs = sorted({p["name"] for d in drafts for p in d.props.get("providers", [])})
-    return pystac.Collection(
+    c = pystac.Collection(
         coll, f"{first.coll_title} datasets from the HK25 catalogue ({len(drafts)} Items).",
         pystac.Extent(pystac.SpatialExtent([GLOBAL_BBOX]), pystac.TemporalExtent([interval])),
         title=first.coll_title, license=lic.pop() if len(lic) == 1 else "other",
         providers=[pystac.Provider(n, roles=["producer"]) for n in provs] or None,
         summaries=pystac.Summaries(summ))
+    if levels:
+        c.stac_extensions = [EXT["dggs"]]
+    return c
 
 
 def write_stac(drafts, stac_dir, vocab):

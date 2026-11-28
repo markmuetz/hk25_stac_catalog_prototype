@@ -134,10 +134,17 @@ def test_healpix_normalised(gm, expected):
 
 
 def test_healpix_level_checked_against_zoom():
-    problems, asset = Problems(), {"km_scale:zoom": 3}
+    problems, asset = Problems(), {"dggs:refinement_level": 3}
     rules.apply_asset_rules("ds1", "PT1H.z3", asset, meta({"healpix_nside": 4, "healpix_order": "nest"}), problems)
-    assert asset["healpix:refinement_level"] == 2
+    assert asset["dggs:refinement_level"] == 3  # the store's name wins
+    assert asset["dggs:dggrs"] == "HEALPix" and asset["dggs:indexing_scheme"] == "nested"
     assert "refinement level 2, store name says zoom 3" in problems.lines()[0]
+
+
+def test_healpix_level_from_grid_mapping_when_not_named():
+    asset = {}
+    rules.apply_asset_rules("ds1", "data", asset, meta({"healpix_nside": 1024, "healpix_order": "ring"}), Problems())
+    assert (asset["dggs:refinement_level"], asset["dggs:indexing_scheme"]) == (10, "ring")
 
 
 def test_gribscan_flag():
@@ -182,19 +189,26 @@ def test_data_forge_level_names(gm):
     assert meta(gm).healpix() == (5, "nested")
 
 
+WGS84_AXES = {"name": "unnamed", "semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563}
+
+
 @pytest.mark.parametrize("gm, expected", [
-    ({"reference_ellipsoid_name": "WGS 84"}, {"km_scale:ellipsoid": {"reference_ellipsoid_name": "WGS 84"}}),
-    ({"semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563},
-     {"km_scale:ellipsoid": {"semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563}}),
+    ({"reference_ellipsoid_name": "WGS 84"}, {"proj:code": "EPSG:4326"}),
+    ({"reference_ellipsoid_name": "GRS 1980"}, {"km_scale:ellipsoid": {"reference_ellipsoid_name": "GRS 1980"}}),
+    ({"semi_major_axis": 6378137.0, "inverse_flattening": 298.257223563}, {"ellipsoid": WGS84_AXES}),
     ({"semi_major_axis": 6378137.0, "semi_minor_axis": 6356752.314},
-     {"km_scale:ellipsoid": {"semi_major_axis": 6378137.0, "semi_minor_axis": 6356752.314}}),
+     {"ellipsoid": {"name": "unnamed", "semi_major_axis": 6378137.0, "semi_minor_axis": 6356752.314}}),
     ({"earth_radius": 6371000.0}, {"km_scale:spherical": True}),
     ({}, {"km_scale:spherical": True}),
 ])
 def test_ellipsoid(gm, expected):
     asset = {}
     rules.apply_asset_rules("ds1", "k", asset, meta({"healpix_nside": 2, "healpix_order": "nest", **gm}), Problems())
-    got = {k: v for k, v in asset.items() if k in ("km_scale:ellipsoid", "km_scale:spherical")}
+    got = {k: v for k, v in asset.items() if k in ("km_scale:ellipsoid", "km_scale:spherical", "proj:code")
+           and v is not None}
+    if "proj:projjson" in asset:
+        got["ellipsoid"] = asset["proj:projjson"]["datum"]["ellipsoid"]
+        assert asset["proj:projjson"]["type"] == "GeographicCRS"
     assert got == expected
 
 

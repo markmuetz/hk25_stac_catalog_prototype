@@ -111,7 +111,7 @@ function groupAssets(assets) {
   const g = {};
   for (const [key, a] of Object.entries(assets)) {
     const freq = key.split(".")[0];
-    (g[freq] ||= []).push({key, a, zoom: a["km_scale:zoom"] ?? null});
+    (g[freq] ||= []).push({key, a, zoom: a["dggs:refinement_level"] ?? null});
   }
   for (const f in g) g[f].sort((x, y) => (x.zoom ?? -1) - (y.zoom ?? -1));
   return g;
@@ -151,11 +151,16 @@ function render(item, entry, tree, sites) {
     ["licence", p.license === "other" ? (p["km_scale:license_text"] ? esc(p["km_scale:license_text"]) : "not stated") : esc(p.license)],
     ["providers", esc((p.providers || []).map(x => `${x.name} (${(x.roles || []).join(", ")})`).join("; "))],
     ["creators", esc(p["km_scale:creators"])],
-    ["references", p["km_scale:references"] ? linkify(p["km_scale:references"]) : ""],
+    ["references", [...(p["sci:publications"] || []).map(x => x.doi
+        ? `<a href="https://doi.org/${esc(x.doi)}">${esc(x.citation || x.doi)}</a>` : linkify(x.citation || "")),
+      ...(item.links || []).filter(l => l.rel === "about").map(l => `<a href="${esc(l.href)}">${esc(l.title || l.href)}</a>`)
+    ].join("<br>")],
+    ["citation", esc(p["sci:citation"])],
     ["DOI", p["sci:doi"] ? `<a href="https://doi.org/${esc(p["sci:doi"])}">${esc(p["sci:doi"])}</a>` : ""],
     ["source", p["km_scale:source"] ? linkify(p["km_scale:source"]) : ""],
     ["acknowledgment", esc(p["km_scale:acknowledgment"])],
-    ["version", esc(p["km_scale:version"])],
+    ["version", esc(p.version)],
+    ["processing version", esc(p["processing:version"])],
     ["simulation", esc(p["km_scale:simulation"])],
     ["source id", esc(p["km_scale:source_id"])],
     ["available at", esc((p["km_scale:sites"] || []).join(", "))],
@@ -245,7 +250,7 @@ function freqBody(item, group, f, sites) {
   const defZoom = zooms.includes(8) ? 8 : (zooms.filter(z => z <= 8).pop() ?? zooms[0] ?? null);
   const vars = withCube ? Object.entries(withCube.a["cube:variables"]) : [];
   const dims = withCube ? Object.entries(withCube.a["cube:dimensions"]) : [];
-  const dimDesc = d => d.type === "healpix" ? "HEALPix cells (count depends on zoom)"
+  const dimDesc = d => (d.type === "dggs" || d.type === "healpix") ? "HEALPix cells (count depends on zoom)"
     : d.values ? (d.values.length > 12 ? `${d.values.length} values: ${d.values.slice(0, 4).join(", ")} … ${d.values.slice(-2).join(", ")}` : d.values.join(", "))
     : d.extent ? `${d.extent.map(x => typeof x === "string" ? fmtDate(x) : x).join(" → ")}` : "";
   return `
@@ -253,7 +258,7 @@ function freqBody(item, group, f, sites) {
       <div>
         <table>
           <tr><th>format</th><td>${esc(fmt)}${a0["zarr:zarr_format"] ? ` (Zarr v${a0["zarr:zarr_format"]}${a0["zarr:consolidated"] ? ", consolidated" : ""})` : ""}</td></tr>
-          ${a0["healpix:indexing_scheme"] ? `<tr><th>grid</th><td>HEALPix, ${esc(a0["healpix:indexing_scheme"])} (from the store)</td></tr>` : ""}
+          ${a0["dggs:indexing_scheme"] ? `<tr><th>grid</th><td>HEALPix, ${esc(a0["dggs:indexing_scheme"])} (from the store)</td></tr>` : ""}
           ${(a0["km_scale:requires"] || []).length ? `<tr><th>needs</th><td>${esc(a0["km_scale:requires"].join(", "))} installed (GRIB-referencing store)</td></tr>` : ""}
           <tr><th>zoom levels</th><td>${zooms.length ? `${zooms[0]}–${zooms[zooms.length - 1]} (${zooms.length} stores)` : "–"}</td></tr>
           ${zooms.length ? `<tr><th>cells</th><td>${(12 * 4 ** zooms[0]).toLocaleString()} (z${zooms[0]}) to ${(12 * 4 ** zooms[zooms.length - 1]).toLocaleString()} (z${zooms[zooms.length - 1]})</td></tr>` : ""}
